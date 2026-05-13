@@ -45,6 +45,16 @@ async function apiPost(table, payload, prefer='return=representation'){
   if(!res.ok) throw new Error(table+' POST '+res.status+': '+await res.text());
   return await res.json().catch(()=>[]);
 }
+
+async function apiUpsertPeople(payload){
+  const res=await fetch(apiBase()+'people?on_conflict=name',{
+    method:'POST',
+    headers:apiHeaders({'Prefer':'resolution=merge-duplicates,return=representation'}),
+    body:JSON.stringify(payload)
+  });
+  if(!res.ok) throw new Error('people UPSERT '+res.status+': '+await res.text());
+  return await res.json().catch(()=>[]);
+}
 async function apiDeleteAll(table){
   const res=await fetch(apiBase()+table+'?id=not.is.null',{method:'DELETE',headers:apiHeaders()});
   if(!res.ok) throw new Error(table+' DELETE '+res.status+': '+await res.text());
@@ -89,7 +99,7 @@ async function seedBaseTables(){
     await apiPost('programs',programs,'resolution=merge-duplicates,return=representation');
   }
   const pe=await apiGet('people','?select=id&limit=1');
-  if(!pe.length) await apiPost('people',SEED_DATA.people.map(name=>({name,is_active:true})),'resolution=merge-duplicates,return=representation');
+  if(!pe.length) await apiUpsertPeople(SEED_DATA.people.map(name=>({name:name,is_active:true})));
   const st=await apiGet('statuses','?select=id&limit=1');
   if(!st.length) await apiPost('statuses',SEED_DATA.statuses.map((name,i)=>({name,sort_order:i+1})),'resolution=merge-duplicates,return=representation');
 }
@@ -123,7 +133,7 @@ async function syncPeople(names){
     }
   }
   for(const name of names){
-    await apiPost('people',{name:name,is_active:true},'resolution=merge-duplicates,return=representation');
+    await apiUpsertPeople({name:name,is_active:true});
   }
 }
 async function save(){ localSave(); renderAll(); await saveOnline(); }

@@ -86,3 +86,10 @@ create policy "public access people" on public.people for all using (true) with 
 create policy "public access statuses" on public.statuses for all using (true) with check (true);
 create policy "public access tasks" on public.tasks for all using (true) with check (true);
 create policy "public access uploads" on public.uploads for all using (true) with check (true);
+
+
+-- تنظيف أي أسماء مكررة احتياطيًا، ثم الإبقاء على unique name
+delete from public.people a
+using public.people b
+where a.name = b.name
+and a.id > b.id;
