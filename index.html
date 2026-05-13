@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brivviant Channels Platform</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="bg-orb orb-1"></div><div class="bg-orb orb-2"></div>
+  <aside class="sidebar">
+    <img src="assets/brivviant-logo.png" class="logo" alt="Brivviant Studios" />
+    <div class="brand-kicker">Channels Operation Platform</div>
+    <nav>
+      <button class="nav-btn active" data-tab="channels">القنوات والبرامج</button>
+      <button class="nav-btn" data-tab="daily">Daily Tasks</button>
+      <button class="nav-btn" data-tab="calendar">Calendar</button>
+      <button class="nav-btn" data-tab="flowchart">Flow Chart</button>
+      <button class="nav-btn" data-tab="uploads">المرفوعات</button>
+      <button class="nav-btn" data-tab="team">الفريق</button>
+    </nav>
+    <div class="mini-stats">
+      <div><span id="statTasks">0</span><small>Tasks</small></div>
+      <div><span id="statDone">0</span><small>Done</small></div>
+      <div><span id="statLate">0</span><small>Late</small></div>
+    </div>
+    <div id="syncState" class="sync-state">Local Ready</div>
+  </aside>
+  <main class="app">
+    <header class="topbar">
+      <div><h1 id="pageTitle">القنوات والبرامج</h1><p>إدارة شغل القنوات، البرامج، الحلقات، التسليمات، والمسؤولين.</p></div>
+      <div class="actions"><input id="searchInput" placeholder="بحث سريع..."/><button id="exportBtn">Export JSON</button><label class="importLabel">Import<input id="importInput" type="file" accept=".json" hidden></label></div>
+    </header>
+
+    <section class="delivery-alerts-wrap">
+      <div class="section-head compact-head"><h2>تنبيهات التسليم</h2><span class="muted">برتقالي = تسليم اليوم / أحمر = متأخر / أخضر = تمام</span></div>
+      <div id="deliveryAlerts" class="delivery-alerts"></div>
+    </section>
+
+    <section id="channels" class="tab active">
+      <div id="channelGrid" class="channel-grid"></div>
+      <div id="programPanel" class="panel hidden"></div>
+    </section>
+
+    <section id="daily" class="tab">
+      <div class="section-head"><h2>تسليمات اليوم</h2><input type="date" id="dailyDate"></div>
+      <div id="dailyList" class="task-list"></div>
+    </section>
+
+    <section id="calendar" class="tab">
+      <div class="section-head"><h2>كالندر جميع التاسكات</h2><div class="calendar-controls"><input type="month" id="calendarMonth"><button id="todayBtn">الشهر الحالي</button></div></div>
+      <div id="calendarGrid" class="calendar-grid"></div>
+    </section>
+
+    <section id="flowchart" class="tab">
+      <div class="section-head"><h2>Flow Chart للقنوات والبرامج</h2><select id="flowFilter"><option value="">كل القنوات</option></select></div>
+      <div id="flowChart" class="flow-wrap"></div>
+    </section>
+
+    <section id="uploads" class="tab">
+      <div class="section-head"><h2>المرفوعات</h2><button id="openUploadDialog">+ إضافة مرفوع</button></div>
+      <div id="uploadsList" class="upload-grid"></div>
+    </section>
+
+    <section id="team" class="tab">
+      <div class="section-head"><h2>إدارة الفريق</h2><button id="addPersonBtn">+ إضافة شخص</button></div>
+      <div class="team-note">أي اسم تضيفه هنا سيظهر تلقائيًا في اختيار المسؤول داخل التاسكات والمرفوعات.</div>
+      <div class="team-grid" id="teamGrid"></div>
+    </section>
+  </main>
+
+  <button class="floating-index" id="indexBtn" title="فهرس التاسكات">☰</button>
+  <aside class="drawer" id="drawer">
+    <div class="drawer-head"><h2>فهرس التاسكات</h2><button id="closeDrawer">×</button></div>
+    <div class="filters"><select id="filterPerson"><option value="">كل الفريق</option></select><select id="filterStatus"><option value="">كل الحالات</option></select></div>
+    <div id="drawerTasks" class="drawer-tasks"></div>
+  </aside>
+
+  <dialog id="taskDialog">
+    <form method="dialog" id="taskForm">
+      <h2 id="dialogTitle">إضافة تاسك</h2>
+      <input type="hidden" id="taskId" />
+      <input type="hidden" id="taskChannel" />
+      <input type="hidden" id="taskProgram" />
+      <div class="two-col">
+        <label>اسم الحلقة<input id="taskEpisodeName" placeholder="مثال: غزوة أحد" /></label>
+        <label>رقم الحلقة<input id="taskEpisodeNumber" placeholder="مثال: 01" /></label>
+      </div>
+      <label>اسم التاسك<input id="taskTitle" required placeholder="مثال: تصميم المشهد / VO / مونتاج" /></label>
+      <div class="two-col">
+        <label>المسؤول<select id="taskOwner" required></select></label>
+        <label>الحالة<select id="taskStatus"></select></label>
+      </div>
+      <div class="two-col">
+        <label>تاريخ التسليم<input id="taskDue" type="date" required /></label>
+        <label>الأولوية<select id="taskPriority"><option>عادي</option><option>مهم</option><option>عاجل</option></select></label>
+      </div>
+      <label>تفاصيل / ملاحظات<textarea id="taskNotes" rows="4"></textarea></label>
+      <label>سبب التأخير — يظهر فقط لو التاسك متأخر<textarea id="taskDelayReason" rows="3" placeholder="مثال: في انتظار خامات / تعديل سكريبت / مراجعة فويس أوفر"></textarea></label>
+      <div class="dialog-actions"><button type="button" id="deleteTask" class="danger hidden">حذف</button><span></span><button type="button" id="cancelTask">إلغاء</button><button id="saveTask">حفظ</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="uploadDialog">
+    <form method="dialog" id="uploadForm">
+      <h2>إضافة مرفوع</h2>
+      <label>اسم الرفع<input id="uploadName" required placeholder="مثال: حلقة 01 VO Final" /></label>
+      <div class="two-col">
+        <label>القناة<select id="uploadChannel" required></select></label>
+        <label>البرنامج<select id="uploadProgram" required></select></label>
+      </div>
+      <div class="two-col">
+        <label>الحلقة<input id="uploadEpisode" placeholder="رقم/اسم الحلقة" /></label>
+        <label>رفع بواسطة<select id="uploadBy" required></select></label>
+      </div>
+      <label>التاسك المرتبط بالتسليم<select id="uploadTask"><option value="">اختياري — اختر التاسك الذي تم رفعه</option></select></label>
+      <div class="upload-hint">لو اخترت التاسك هنا، المنصة هتعمل عليه علامة تم التسليم تلقائيًا بعد حفظ الرفع.</div>
+      <label>رابط Drive / YouTube / GitHub<input id="uploadLink" placeholder="اختياري" /></label>
+      <label>ملف للرفع إلى GitHub<input id="uploadFile" type="file" /></label>
+      <label>ملاحظات<textarea id="uploadNotes" rows="3"></textarea></label>
+      <div class="dialog-actions"><span></span><button type="button" id="cancelUpload">إلغاء</button><button id="saveUpload">حفظ المرفوع</button></div>
+    </form>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script src="data.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

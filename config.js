@@ -1,0 +1,4 @@
+window.BRIVVIANT_CONFIG = {
+  SUPABASE_URL: "https://ahhpjakscnbjcnualcpp.supabase.co",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFoaHBqYWtzY25iamNudWFsY3BwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2NjE2NTYsImV4cCI6MjA5NDIzNzY1Nn0.bE2QkYPo1oz2OYdQxJYSQ8xQImKb5a6sMqLQxAS2MeI"
+};
