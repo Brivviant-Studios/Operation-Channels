@@ -113,6 +113,7 @@ function normalizeUsers(users){
     password:u.password||u.password_plain||u.passwordHash||u.password_hash||'',
     nickname:u.nickname||u.nick_name||u.name||u.username||'',
     email:u.email||'',
+    avatar:u.avatar||u.profile_image||u.profileImage||'',
     role:normalizeRole(u.role),
     isActive:u.isActive!==false && u.is_active!==false,
     createdAt:u.createdAt||u.created_at||new Date().toISOString()
@@ -178,7 +179,7 @@ async function loadOnline(){
     let logs=[];
     try{ logs=await apiGet('activity_logs','?select=*&order=created_at.desc&limit=500'); }catch(logErr){ console.warn('activity_logs table not ready', logErr); }
     state.channels=channels.map(c=>({id:c.id,name:c.name,programs:programs.filter(p=>p.channel_id===c.id).map(p=>p.name)}));
-    state.users=normalizeUsers(people.map(p=>({id:p.id,name:p.name,username:p.username||p.name,password:p.password||p.password_plain||p.password_hash||'',nickname:p.nickname||p.name,email:p.email||'',role:p.role||'standard',isActive:p.is_active,createdAt:p.created_at})));
+    state.users=normalizeUsers(people.map(p=>({id:p.id,name:p.name,username:p.username||p.name,password:p.password||p.password_plain||p.password_hash||'',nickname:p.nickname||p.name,email:p.email||'',avatar:p.profile_image||p.avatar||'',role:p.role||'standard',isActive:p.is_active,createdAt:p.created_at})));
     state.people=people.map(p=>p.name);
     state.statuses=statuses.map(s=>s.name);
     state.tasks=tasks.map(dbTaskToUi);
@@ -205,7 +206,7 @@ async function seedBaseTables(){
   }
   const pe=await apiGet('people','?select=id&limit=1');
   if(!pe.length){
-    await apiUpsertPeople([{name:'Brivviant',username:'Brivviant',password:DEFAULT_ADMIN.password,nickname:'Main Admin',email:'',role:'admin',is_active:true}, ...SEED_DATA.people.map(name=>({name:name,username:name,password:generatePassword(),nickname:name,email:'',role:'standard',is_active:true}))]);
+    await apiUpsertPeople([{name:'Brivviant',username:'Brivviant',password:DEFAULT_ADMIN.password,nickname:'Main Admin',email:'',role:'admin',profile_image:'',is_active:true}, ...SEED_DATA.people.map(name=>({name:name,username:name,password:generatePassword(),nickname:name,email:'',role:'standard',profile_image:'',is_active:true}))]);
   }
   const st=await apiGet('statuses','?select=id&limit=1');
   if(!st.length) await apiPost('statuses',SEED_DATA.statuses.map((name,i)=>({name,sort_order:i+1})),'resolution=merge-duplicates,return=representation');
@@ -243,7 +244,7 @@ async function syncPeople(names){
   }
   for(const name of activeNames){
     const u=users.find(x=>x.name===name) || {name, username:name, password:generatePassword(), nickname:name, email:'', role:'standard', isActive:true};
-    await apiUpsertPeople([{name:u.name,username:u.username,password:u.password||'',nickname:u.nickname||u.name,email:u.email||'',role:u.role||'standard',is_active:u.isActive!==false}]);
+    await apiUpsertPeople([{name:u.name,username:u.username,password:u.password||'',nickname:u.nickname||u.name,email:u.email||'',role:u.role||'standard',profile_image:u.avatar||'',is_active:u.isActive!==false}]);
   }
 }
 async function save(){ localSave(); renderAll(); await saveOnline(); }
@@ -261,12 +262,20 @@ function uiTaskToDb(t){
   return {id:t.id,channel_name:t.channel||'',program_name:t.program||'',episode_name:t.episodeName||'',episode_number:t.episodeNumber||'',title:t.title||'',owner_name:t.owner||'',status:t.status||'لم يبدأ',due:t.due||null,priority:t.priority||'Normal',notes:t.notes||'',delay_reason:t.delayReason||'',archived_from_tasks:!!t.archivedFromTasks,archived_at:t.archivedAt||null,delivered_at:t.deliveredAt||null,delivered_by:t.deliveredBy||'',delivered_upload_id:null,updated_at:new Date().toISOString()};
 }
 function dbUploadToUi(u){
-  return {id:u.id,name:u.name||'',channel:u.channel_name||'',program:u.program_name||'',episode:u.episode||'',by:u.by_name||'',taskId:u.task_id||'',taskTitle:u.task_title||'',link:u.link||'',githubPath:u.github_path||'',notes:u.notes||'',createdAt:u.created_at||'',createdAtText:u.created_at?new Date(u.created_at).toLocaleString('ar-EG'):''};
+  return {id:u.id,name:u.name||'',channel:u.channel_name||'',program:u.program_name||'',episode:u.episode||'',by:u.by_name||'',taskId:u.task_id||'',taskTitle:u.task_title||'',link:u.link||'',githubPath:u.github_path||'',fileName:u.file_name||'',fileType:u.file_type||'',fileData:u.file_data||'',fileSize:u.file_size||0,notes:u.notes||'',createdAt:u.created_at||'',createdAtText:u.created_at?new Date(u.created_at).toLocaleString('ar-EG'):''};
 }
 function uiUploadToDb(u){
-  return {id:u.id,name:u.name||'',channel_name:u.channel||'',program_name:u.program||'',episode:u.episode||'',by_name:u.by||'',task_id:u.taskId||null,task_title:u.taskTitle||'',link:u.link||'',github_path:u.githubPath||'',notes:u.notes||'',created_at:u.createdAt||new Date().toISOString()};
+  return {id:u.id,name:u.name||'',channel_name:u.channel||'',program_name:u.program||'',episode:u.episode||'',by_name:u.by||'',task_id:u.taskId||null,task_title:u.taskTitle||'',link:u.link||'',github_path:u.githubPath||'',file_name:u.fileName||'',file_type:u.fileType||'',file_data:u.fileData||'',file_size:u.fileSize||0,notes:u.notes||'',created_at:u.createdAt||new Date().toISOString()};
 }
-async function fileToBase64(file){ return null; }
+async function fileToBase64(file){
+  if(!file) return null;
+  return await new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=()=>resolve(r.result);
+    r.onerror=()=>reject(r.error||new Error('File read failed'));
+    r.readAsDataURL(file);
+  });
+}
 async function uploadFileDirectToGithub(file, meta){ return null; }
 function taskProgress(channel,program){let t=activeTasks().filter(x=>x.channel===channel&&x.program===program); if(!t.length)return 0; return Math.round(t.filter(x=>isDone(x)).length/t.length*100)}
 function slug(s){return btoa(unescape(encodeURIComponent(s))).replaceAll('=','').replaceAll('/','_')}
@@ -444,7 +453,25 @@ async function removePerson(name){
   await save();
 }
 function renderStats(){let t=activeTasks();$('#statTasks').textContent=t.length;$('#statDone').textContent=t.filter(isDone).length;$('#statLate').textContent=t.filter(isLate).length}
-function renderUploads(){ const list=$('#uploadsList'); if(!list)return; list.innerHTML=(state.uploads||[]).map(u=>`<div class="upload-card"><h3>${safe(u.name)}</h3><div class="upload-meta"><span>${safe(u.channel)}</span><span>${safe(u.program)}</span><span>حلقة: ${safe(u.episode||'-')}</span><span>رفع: ${safe(u.by)}</span><span>${safe(u.createdAtText||'')}</span>${u.taskTitle?`<span>تاسك: ${safe(u.taskTitle)}</span>`:''}</div>${u.link?`<p><a href="${safeAttr(u.link)}" target="_blank">فتح الرابط</a></p>`:''}${u.githubPath?`<p class="muted">GitHub: ${safe(u.githubPath)}</p>`:''}${u.notes?`<small>${safe(u.notes)}</small>`:''}</div>`).join('') || '<div class="panel">لا توجد مرفوعات بعد.</div>'; }
+function renderUploads(){
+  const list=$('#uploadsList'); if(!list)return;
+  list.innerHTML=(state.uploads||[]).map(u=>{
+    const isImg=String(u.fileType||'').startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(u.fileName||u.link||'');
+    const fileUrl=u.fileData || u.link || '';
+    const preview=(isImg && fileUrl) ? `<a href="${safeAttr(fileUrl)}" download="${safeAttr(u.fileName||u.name||'upload')}" class="upload-preview-link"><img class="upload-preview" src="${safeAttr(fileUrl)}" alt="${safeAttr(u.fileName||u.name)}"></a>` : '';
+    const download=(u.fileData||u.link) ? `<a class="download-btn" href="${safeAttr(fileUrl)}" ${u.fileData?'download="'+safeAttr(u.fileName||u.name||'upload')+'"':'target="_blank"'}>تحميل / فتح الملف</a>` : '';
+    const adminDelete=isAdmin()?`<button class="danger delete-upload-btn" data-action="delete-upload" data-id="${safeAttr(u.id)}">حذف المرفوع</button>`:'';
+    return `<div class="upload-card pro-upload-card">${preview}<div class="upload-body"><h3>${safe(u.name)}</h3><div class="upload-meta"><span>${safe(u.channel)}</span><span>${safe(u.program)}</span><span>حلقة: ${safe(u.episode||'-')}</span><span>رفع: ${safe(u.by)}</span><span>${safe(u.createdAtText||'')}</span>${u.taskTitle?`<span>تاسك: ${safe(u.taskTitle)}</span>`:''}${u.fileName?`<span>File: ${safe(u.fileName)}</span>`:''}</div>${download}${u.githubPath?`<p class="muted">GitHub: ${safe(u.githubPath)}</p>`:''}${u.notes?`<small>${safe(u.notes)}</small>`:''}</div><div class="upload-actions">${adminDelete}</div></div>`;
+  }).join('') || '<div class="panel">لا توجد مرفوعات بعد.</div>';
+}
+async function deleteUpload(id){
+  if(!isAdmin()) return alert('حذف المرفوعات متاح للأدمن فقط.');
+  const u=(state.uploads||[]).find(x=>x.id===id); if(!u) return;
+  if(!confirm('حذف المرفوع نهائيًا من النظام؟')) return;
+  state.uploads=(state.uploads||[]).filter(x=>x.id!==id);
+  await logAction('UPLOAD_DELETE', `حذف مرفوع: ${u.name}`, u.name);
+  await save();
+}
 function renderLogs(){
   const box=$('#logsList'); if(!box) return;
   const typeSel=$('#logTypeFilter');
@@ -470,13 +497,16 @@ function renderMyTasks(){
 function openUploadDialog(){ fillSelects(); $('#uploadForm').reset(); updateUploadPrograms(); const me=currentUser(); if(me && !isAdmin()){ $('#uploadBy').value=me.name; $('#uploadBy').disabled=true; } $('#uploadDialog').showModal(); }
 async function saveUploadForm(e){
   e.preventDefault();
-  const file=$('#uploadFile').files[0]; let github=null; const linkedTaskId=$('#uploadTask').value; const linkedTask=state.tasks.find(t=>t.id===linkedTaskId);
+  const file=$('#uploadFile').files[0]; let github=null; let fileData='', fileName='', fileType='', fileSize=0; const linkedTaskId=$('#uploadTask').value; const linkedTask=state.tasks.find(t=>t.id===linkedTaskId);
   const me=currentUser();
   if(!isAdmin() && linkedTask && linkedTask.owner!==me?.name) return alert('يمكنك رفع ملفات لتاسكاتك فقط.');
   const meta={channel:$('#uploadChannel').value,program:$('#uploadProgram').value,episode:$('#uploadEpisode').value,name:$('#uploadName').value};
-  try{github=await uploadFileDirectToGithub(file,meta)}catch(err){console.error(err);alert('تم حفظ السجل، لكن رفع الملف على GitHub لم يكتمل. اتأكد من التوكن وصلاحية Contents Read/Write.')}
+  try{
+    if(file){ fileData=await fileToBase64(file); fileName=file.name; fileType=file.type||''; fileSize=file.size||0; }
+    github=await uploadFileDirectToGithub(file,meta);
+  }catch(err){console.error(err);alert('تم حفظ السجل، لكن قراءة/رفع الملف لم تكتمل.')}
   const byName=(!isAdmin() && me)?me.name:$('#uploadBy').value;
-  const item={id:crypto.randomUUID(),name:$('#uploadName').value,channel:$('#uploadChannel').value,program:$('#uploadProgram').value,episode:$('#uploadEpisode').value,by:byName,taskId:linkedTaskId,taskTitle:linkedTask?.title||'',link:$('#uploadLink').value || github?.url || '',githubPath:github?.path || '',notes:$('#uploadNotes').value,createdAt:new Date().toISOString(),createdAtText:new Date().toLocaleString('ar-EG')};
+  const item={id:crypto.randomUUID(),name:$('#uploadName').value,channel:$('#uploadChannel').value,program:$('#uploadProgram').value,episode:$('#uploadEpisode').value,by:byName,taskId:linkedTaskId,taskTitle:linkedTask?.title||'',link:$('#uploadLink').value || github?.url || '',githubPath:github?.path || '',fileName,fileType,fileData,fileSize,notes:$('#uploadNotes').value,createdAt:new Date().toISOString(),createdAtText:new Date().toLocaleString('ar-EG')};
   state.uploads=[item,...(state.uploads||[])];
   if(linkedTask){ linkedTask.status='تم التسليم'; linkedTask.deliveredAt=item.createdAt; linkedTask.deliveredBy=item.by; linkedTask.deliveredUploadId=item.id; linkedTask.updatedAt=item.createdAt; linkedTask.delayReason=''; }
   await logAction('UPLOAD_CREATE', `رفع ملف/رابط بواسطة ${item.by}${linkedTask?` وربطه بتاسك: ${linkedTask.title}`:''}`, item.name);
@@ -505,6 +535,9 @@ function bindEvents(){
   $('#uploadProgram')?.addEventListener('change',updateUploadTasks);
   $('#uploadEpisode')?.addEventListener('input',updateUploadTasks);
   $('#saveUpload')?.addEventListener('click',saveUploadForm);
+  $('#cancelProfile')?.addEventListener('click',()=>$('#profileDialog').close());
+  $('#saveProfile')?.addEventListener('click',saveProfileForm);
+  $('#profileAvatarFile')?.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(f){ const data=await fileToBase64(f); $('#profileAvatarPreview').innerHTML=`<img src="${safeAttr(data)}" alt="Profile">`; } });
   document.addEventListener('click',async e=>{
     const el=e.target.closest('[data-action]'); if(!el)return;
     const a=el.dataset.action;
@@ -523,6 +556,8 @@ function bindEvents(){
     if(a==='rename-person') await renamePerson(el.dataset.name);
     if(a==='edit-account') openAccountDialog(el.dataset.name);
     if(a==='remove-person') await removePerson(el.dataset.name);
+    if(a==='delete-upload') await deleteUpload(el.dataset.id);
+    if(a==='open-profile') openProfileDialog();
   });
 }
 
@@ -577,10 +612,52 @@ async function login(){
   applyRolePermissions(); renderAll();
 }
 async function logout(){ const me=currentUser(); await logAction('LOGOUT', `تسجيل خروج للحساب ${me?.name||''}`, 'Logout', me||{}); clearSession(); $('#loginUsername').value=''; $('#loginPassword').value=''; $('#loginOverlay').style.display='flex'; updateProfileBox(); }
+function updateProfileBar(){
+  const bar=$('#profileBar'); if(!bar) return;
+  const me=currentUser();
+  if(!me){ bar.innerHTML=''; return; }
+  const avatar=me.avatar?`<img src="${safeAttr(me.avatar)}" alt="Profile">`:`<span>${safe((me.nickname||me.name||'?').slice(0,1))}</span>`;
+  bar.innerHTML=`<button class="profile-bar-btn" data-action="open-profile" title="Edit Profile"><div class="profile-avatar">${avatar}</div><div><b>${safe(me.nickname||me.name)}</b><small>@${safe(me.username)} • ${safe(roleLabel(me.role))}</small></div></button>`;
+}
+function openProfileDialog(){
+  const me=currentUser(); if(!me) return;
+  $('#profileName').value=me.name||'';
+  $('#profileNickname').value=me.nickname||me.name||'';
+  $('#profileEmail').value=me.email||'';
+  $('#profileUsernameView').value=me.username||'';
+  $('#profileAvatarPreview').innerHTML=me.avatar?`<img src="${safeAttr(me.avatar)}" alt="Profile">`:'لا توجد صورة';
+  $('#profileAvatarFile').value='';
+  $('#profileDialog').showModal();
+}
+async function saveProfileForm(e){
+  e.preventDefault();
+  const me=currentUser(); if(!me) return;
+  const user=getUserByName(me.name)||state.users.find(u=>u.username===me.username); if(!user) return;
+  const oldName=user.name;
+  const name=($('#profileName').value||'').trim();
+  const nickname=($('#profileNickname').value||'').trim()||name;
+  const email=($('#profileEmail').value||'').trim();
+  if(!name) return alert('لازم تدخل الاسم.');
+  const dup=normalizeUsers(state.users).some(u=>u.name===name && u.username!==user.username);
+  if(dup) return alert('الاسم مستخدم لحساب آخر.');
+  const file=$('#profileAvatarFile')?.files?.[0];
+  if(file){ user.avatar=await fileToBase64(file); }
+  Object.assign(user,{name,nickname,email});
+  if(oldName!==name){
+    state.people=getPeopleNames().map(p=>p===oldName?name:p);
+    state.tasks.forEach(t=>{ if(t.owner===oldName) t.owner=name; if(t.deliveredBy===oldName) t.deliveredBy=name; });
+    state.uploads.forEach(u=>{ if(u.by===oldName) u.by=name; });
+  }
+  setSession({username:user.username,name:user.name,role:user.role});
+  await logAction('PROFILE_UPDATE', `تعديل البروفايل للحساب ${user.name}`, user.name, user);
+  $('#profileDialog').close();
+  await save();
+}
 function updateProfileBox(){
   const box=$('#profileBox'); if(!box) return;
   const me=currentUser();
-  if(!me){ box.innerHTML='<small>Not logged in</small>'; return; }
+  if(!me){ box.innerHTML='<small>Not logged in</small>'; updateProfileBar(); return; }
+  updateProfileBar();
   box.innerHTML=`<div class="profile-name">${safe(me.nickname||me.name)}</div><small>@${safe(me.username)} • ${safe(roleLabel(me.role))}</small><small>${safe(me.email||'')}</small>`;
 }
 function showForgotPassword(){

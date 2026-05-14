@@ -33,7 +33,7 @@
   <main class="app">
     <header class="topbar">
       <div><h1 id="pageTitle">القنوات والبرامج</h1><p>إدارة شغل القنوات، البرامج، الحلقات، التسليمات، والمسؤولين.</p></div>
-      <div class="actions"><input id="searchInput" placeholder="بحث سريع..."/><button id="exportBtn">Export JSON</button><label class="importLabel">Import<input id="importInput" type="file" accept=".json" hidden></label></div>
+      <div class="actions"><div id="profileBar" class="profile-bar"></div><input id="searchInput" placeholder="بحث سريع..."/><button id="exportBtn">Export JSON</button><label class="importLabel">Import<input id="importInput" type="file" accept=".json" hidden></label></div>
     </header>
 
     <section class="delivery-alerts-wrap">
@@ -161,6 +161,23 @@
         <label>Role<select id="accountRole"><option value="standard">Staff</option><option value="admin">Admin</option></select></label>
       </div>
       <div class="dialog-actions"><button type="button" id="generatePasswordBtn">Generate Password</button><span></span><button type="button" id="cancelAccount">إلغاء</button><button id="saveAccount">حفظ الحساب</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="profileDialog">
+    <form method="dialog" id="profileForm">
+      <h2>تعديل البروفايل</h2>
+      <div id="profileAvatarPreview" class="profile-avatar-preview">لا توجد صورة</div>
+      <label>صورة الحساب<input id="profileAvatarFile" type="file" accept="image/*" /></label>
+      <div class="two-col">
+        <label>Name<input id="profileName" required /></label>
+        <label>Nickname<input id="profileNickname" /></label>
+      </div>
+      <div class="two-col">
+        <label>UserName<input id="profileUsernameView" readonly /></label>
+        <label>Email<input id="profileEmail" type="email" /></label>
+      </div>
+      <div class="dialog-actions"><span></span><button type="button" id="cancelProfile">إلغاء</button><button id="saveProfile">حفظ البروفايل</button></div>
     </form>
   </dialog>
 

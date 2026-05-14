@@ -114,3 +114,22 @@ button:disabled{opacity:.45;cursor:not-allowed}
   .pro-meta{grid-template-columns:1fr!important;}
   .topbar,.section-head{align-items:stretch!important;}
 }
+
+
+/* Upload previews, download buttons, admin delete uploads */
+.pro-upload-card{display:grid;grid-template-columns:140px minmax(0,1fr) auto;gap:16px;align-items:start;padding:18px!important;border-radius:24px!important;background:linear-gradient(135deg,rgba(255,255,255,.07),rgba(255,255,255,.025));border:1px solid var(--line);}
+.upload-preview-link{display:block;width:140px;height:105px;border-radius:18px;overflow:hidden;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04)}
+.upload-preview{width:100%;height:100%;object-fit:cover;display:block}
+.upload-body{min-width:0}.upload-body h3{margin:0 0 10px;color:var(--mint)}
+.download-btn{display:inline-flex;margin-top:10px;padding:10px 14px;border-radius:14px;background:rgba(183,226,168,.16);border:1px solid rgba(183,226,168,.35);color:var(--mint);font-weight:900;text-decoration:none}
+.upload-actions{display:flex;gap:8px;align-items:start}.delete-upload-btn{background:rgba(255,107,107,.18)!important;color:#ffd4d4!important;border:1px solid rgba(255,107,107,.5)!important}
+
+/* Top profile bar */
+.profile-bar{display:flex;align-items:center;min-width:220px;justify-content:flex-start}
+.profile-bar-btn{display:flex;align-items:center;gap:10px;background:linear-gradient(135deg,rgba(255,255,255,.07),rgba(255,255,255,.025))!important;border:1px solid var(--line)!important;color:var(--text)!important;border-radius:18px!important;padding:8px 12px!important;text-align:right;min-width:220px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.profile-bar-btn b{display:block;color:var(--mint);font-size:13px}.profile-bar-btn small{display:block;color:var(--muted);font-size:11px}
+.profile-avatar{width:42px;height:42px;border-radius:50%;overflow:hidden;border:1px solid rgba(183,226,168,.42);background:rgba(183,226,168,.12);display:flex;align-items:center;justify-content:center;color:var(--mint);font-weight:900;flex:0 0 42px}
+.profile-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.profile-avatar-preview{width:112px;height:112px;border-radius:24px;border:1px solid var(--line);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--muted);margin:0 auto 14px}
+.profile-avatar-preview img{width:100%;height:100%;object-fit:cover;display:block}
+@media(max-width:950px){.topbar{flex-direction:column}.actions{flex-wrap:wrap}.profile-bar,.profile-bar-btn{min-width:100%;width:100%}.pro-upload-card{grid-template-columns:1fr}.upload-preview-link{width:100%;height:220px}.upload-actions{width:100%}.delete-upload-btn{width:100%}}
