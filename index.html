@@ -25,6 +25,8 @@
       <div><span id="statDone">0</span><small>Done</small></div>
       <div><span id="statLate">0</span><small>Late</small></div>
     </div>
+    <div id="profileBox" class="profile-box"><small>Not logged in</small></div>
+    <button id="logoutBtn" class="logout-btn">Logout</button>
     <div id="syncState" class="sync-state">Local Ready</div>
   </aside>
   <main class="app">
@@ -125,6 +127,27 @@
       <label>ملف للرفع إلى GitHub<input id="uploadFile" type="file" /></label>
       <label>ملاحظات<textarea id="uploadNotes" rows="3"></textarea></label>
       <div class="dialog-actions"><span></span><button type="button" id="cancelUpload">إلغاء</button><button id="saveUpload">حفظ المرفوع</button></div>
+    </form>
+  </dialog>
+
+
+  <dialog id="accountDialog">
+    <form method="dialog" id="accountForm">
+      <h2 id="accountDialogTitle">إضافة حساب</h2>
+      <input type="hidden" id="accountOldName" />
+      <div class="two-col">
+        <label>Name<input id="accountName" required placeholder="Full name" /></label>
+        <label>Nickname<input id="accountNickname" placeholder="Display nickname" /></label>
+      </div>
+      <div class="two-col">
+        <label>UserName<input id="accountUsername" required placeholder="Username" /></label>
+        <label>Email<input id="accountEmail" type="email" placeholder="email@example.com" /></label>
+      </div>
+      <div class="two-col">
+        <label>Password<input id="accountPassword" required placeholder="Plain password" /></label>
+        <label>Role<select id="accountRole"><option value="standard">Staff</option><option value="admin">Admin</option></select></label>
+      </div>
+      <div class="dialog-actions"><button type="button" id="generatePasswordBtn">Generate Password</button><span></span><button type="button" id="cancelAccount">إلغاء</button><button id="saveAccount">حفظ الحساب</button></div>
     </form>
   </dialog>
 

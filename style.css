@@ -51,3 +51,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .login-error{min-height:20px;color:#ff8e8e;font-size:13px}
 .restricted{display:none !important}
 .ghost-login-btn{background:rgba(255,255,255,.08)!important;color:#fff!important;border:1px solid rgba(255,255,255,.12)!important}
+.profile-box{margin-top:14px;padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:16px;background:rgba(255,255,255,.05);color:#fff;display:flex;flex-direction:column;gap:4px}
+.profile-name{font-weight:800;font-size:14px}
+.logout-btn{width:100%;margin-top:10px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#fff;cursor:pointer}
+.logout-btn:hover{background:rgba(255,255,255,.14)}
+.restricted{display:none!important}

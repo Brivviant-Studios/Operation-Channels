@@ -14,6 +14,9 @@ state.tasks = state.tasks || [];
 state.uploads = state.uploads || [];
 state.users = Array.isArray(state.users) ? state.users : [];
 const DEFAULT_ADMIN = { name:'Brivviant', username:'Brivviant', password:'Brivviant@123456', role:'admin', isActive:true };
+const roleLabel=r=>(r==='admin'?'Admin':'Staff');
+const normalizeRole=r=>(String(r||'standard').toLowerCase()==='admin'?'admin':'standard');
+function generatePassword(len=10){ const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#'; let out=''; for(let i=0;i<len;i++) out+=chars[Math.floor(Math.random()*chars.length)]; return out; }
 const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 const today=()=>new Date().toISOString().slice(0,10);
 const monthNow=()=>new Date().toISOString().slice(0,7);
@@ -27,33 +30,27 @@ const safeAttr=safe;
 const AUTH_KEY = 'brivviant_auth_session_v2';
 function personName(p){ return typeof p === 'string' ? p : (p?.name || p?.username || ''); }
 function getPeopleNames(){ return (state.people||[]).map(personName).filter(Boolean); }
-function getUserByName(name){ return (state.users||[]).find(u=>u.name===name || u.username===name) || null; }
+function getUserByName(name){ const n=normalizeUsers(state.users); const idx=n.findIndex(u=>u.name===name || u.username===name); if(idx<0) return null; const real=(state.users||[]).find(u=>(u.name||u.username)===(n[idx].name||n[idx].username)); return real || n[idx]; }
 function getSession(){ try { return JSON.parse(localStorage.getItem(AUTH_KEY)||'null'); } catch(e){ return null; } }
 function setSession(s){ localStorage.setItem(AUTH_KEY, JSON.stringify(s)); }
 function clearSession(){ localStorage.removeItem(AUTH_KEY); }
 function currentSession(){ return getSession(); }
-function currentUser(){ const ss=currentSession(); return ss ? (state.users||[]).find(u=>u.username===ss.username) || ss : null; }
+function currentUser(){ const ss=currentSession(); return ss ? normalizeUsers(state.users).find(u=>u.username===ss.username) || ss : null; }
 function isAdmin(){ return (currentUser()?.role || currentSession()?.role) === 'admin'; }
-async function hashPassword(password){
-  if(!password) return '';
-  if(window.crypto?.subtle){
-    const data=new TextEncoder().encode(password);
-    const hash=await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
-  }
-  return 'plain:' + password;
-}
+async function hashPassword(password){ return String(password||''); }
 async function ensureDefaultAdmin(){
   state.users = Array.isArray(state.users) ? state.users : [];
-  let admin = state.users.find(u=>u.username===DEFAULT_ADMIN.username);
+  let admin = state.users.find(u=>u.username===DEFAULT_ADMIN.username || u.name===DEFAULT_ADMIN.name);
   if(!admin){
-    admin = {...DEFAULT_ADMIN, passwordHash: await hashPassword(DEFAULT_ADMIN.password)};
-    delete admin.password;
+    admin = {...DEFAULT_ADMIN, id:crypto.randomUUID?.()||String(Date.now()), nickname:'Main Admin', email:'', role:'admin', password:DEFAULT_ADMIN.password};
     state.users.push(admin);
-  }else if(!admin.passwordHash && admin.password){
-    admin.passwordHash = await hashPassword(admin.password);
-    delete admin.password;
   }
+  admin.name = admin.name || DEFAULT_ADMIN.name;
+  admin.username = DEFAULT_ADMIN.username;
+  admin.password = admin.password || admin.passwordHash || admin.password_hash || DEFAULT_ADMIN.password;
+  admin.role = 'admin';
+  admin.isActive = true;
+  delete admin.passwordHash; delete admin.password_hash;
   state.people = getPeopleNames();
   if(!state.people.includes(admin.name)) state.people.unshift(admin.name);
   localSave();
@@ -61,10 +58,12 @@ async function ensureDefaultAdmin(){
 function normalizeUsers(users){
   return (Array.isArray(users)?users:[]).map(u=>({
     id:u.id||crypto.randomUUID?.()||String(Date.now()+Math.random()),
-    name:u.name||u.username||'',
+    name:u.name||u.full_name||u.username||'',
     username:u.username||u.name||'',
-    passwordHash:u.passwordHash||u.password_hash||'',
-    role:(u.role==='admin')?'admin':'standard',
+    password:u.password||u.password_plain||u.passwordHash||u.password_hash||'',
+    nickname:u.nickname||u.nick_name||u.name||u.username||'',
+    email:u.email||'',
+    role:normalizeRole(u.role),
     isActive:u.isActive!==false && u.is_active!==false,
     createdAt:u.createdAt||u.created_at||new Date().toISOString()
   })).filter(u=>u.name && u.username);
@@ -127,7 +126,7 @@ async function loadOnline(){
     const tasks=await apiGet('tasks','?select=*&order=due.asc');
     const uploads=await apiGet('uploads','?select=*&order=created_at.desc');
     state.channels=channels.map(c=>({id:c.id,name:c.name,programs:programs.filter(p=>p.channel_id===c.id).map(p=>p.name)}));
-    state.users=normalizeUsers(people.map(p=>({id:p.id,name:p.name,username:p.username||p.name,passwordHash:p.password_hash||'',role:p.role||'standard',isActive:p.is_active,createdAt:p.created_at})));
+    state.users=normalizeUsers(people.map(p=>({id:p.id,name:p.name,username:p.username||p.name,password:p.password||p.password_plain||p.password_hash||'',nickname:p.nickname||p.name,email:p.email||'',role:p.role||'standard',isActive:p.is_active,createdAt:p.created_at})));
     state.people=people.map(p=>p.name);
     state.statuses=statuses.map(s=>s.name);
     state.tasks=tasks.map(dbTaskToUi);
@@ -153,8 +152,7 @@ async function seedBaseTables(){
   }
   const pe=await apiGet('people','?select=id&limit=1');
   if(!pe.length){
-    const adminHash = await hashPassword(DEFAULT_ADMIN.password);
-    await apiUpsertPeople([{name:'Brivviant',username:'Brivviant',password_hash:adminHash,role:'admin',is_active:true}, ...SEED_DATA.people.map(name=>({name:name,username:name,password_hash:'',role:'standard',is_active:true}))]);
+    await apiUpsertPeople([{name:'Brivviant',username:'Brivviant',password:DEFAULT_ADMIN.password,nickname:'Main Admin',email:'',role:'admin',is_active:true}, ...SEED_DATA.people.map(name=>({name:name,username:name,password:generatePassword(),nickname:name,email:'',role:'standard',is_active:true}))]);
   }
   const st=await apiGet('statuses','?select=id&limit=1');
   if(!st.length) await apiPost('statuses',SEED_DATA.statuses.map((name,i)=>({name,sort_order:i+1})),'resolution=merge-duplicates,return=representation');
@@ -191,8 +189,8 @@ async function syncPeople(names){
     }
   }
   for(const name of activeNames){
-    const u=users.find(x=>x.name===name) || {name, username:name, passwordHash:'', role:'standard', isActive:true};
-    await apiUpsertPeople([{name:u.name,username:u.username,password_hash:u.passwordHash||'',role:u.role||'standard',is_active:u.isActive!==false}]);
+    const u=users.find(x=>x.name===name) || {name, username:name, password:generatePassword(), nickname:name, email:'', role:'standard', isActive:true};
+    await apiUpsertPeople([{name:u.name,username:u.username,password:u.password||'',nickname:u.nickname||u.name,email:u.email||'',role:u.role||'standard',is_active:u.isActive!==false}]);
   }
 }
 async function save(){ localSave(); renderAll(); await saveOnline(); }
@@ -278,44 +276,55 @@ function renderDeliveryAlerts(){ const box=$('#deliveryAlerts'); if(!box)return;
 
 function renderTeam(){
   const grid=$('#teamGrid'); if(!grid)return;
-  const users=normalizeUsers(state.users);
+  const users=normalizeUsers(state.users).filter(u=>u.isActive!==false);
   const names=[...new Set([...users.map(u=>u.name), ...getPeopleNames()])];
   grid.innerHTML=names.map(name=>{
-    const u=users.find(x=>x.name===name) || {name, username:name, role:'standard', passwordHash:''};
+    const u=users.find(x=>x.name===name) || {name, username:name, password:generatePassword(), nickname:name, email:'', role:'standard'};
     let tasks=activeTasks().filter(t=>t.owner===name);
     let cls=tasks.filter(isLate).length?'red':(tasks.filter(isDueToday).length?'orange':'green');
-    return `<div class="person-card team-status-card ${cls}"><h3>${safe(name)}</h3><p>${tasks.length} تاسكات</p><span class="pill">Username: ${safe(u.username||'-')}</span><span class="pill">Role: ${safe(u.role||'standard')}</span><span class="pill">Password: ${u.passwordHash?'محفوظة بشكل مؤمّن':'لم يتم تعيينها'}</span><span class="pill">${tasks.filter(isDone).length} تم</span><span class="pill">${tasks.filter(isDueToday).length} تسليم اليوم</span><span class="pill">${tasks.filter(isLate).length} متأخر</span><div class="person-actions"><button data-action="rename-person" data-name="${safeAttr(name)}">تعديل الحساب</button><button data-action="reset-password" data-name="${safeAttr(name)}">تغيير كلمة المرور</button><button class="danger small-danger" data-action="remove-person" data-name="${safeAttr(name)}">حذف</button></div></div>`
+    return `<div class="person-card team-status-card ${cls}"><h3>${safe(u.nickname||name)}</h3><p>${safe(name)} • ${tasks.length} تاسكات</p><span class="pill">UserName: ${safe(u.username||'-')}</span><span class="pill">Password: ${safe(u.password||'-')}</span><span class="pill">Nickname: ${safe(u.nickname||'-')}</span><span class="pill">Email: ${safe(u.email||'-')}</span><span class="pill">Role: ${safe(roleLabel(u.role))}</span><span class="pill">${tasks.filter(isDone).length} تم</span><span class="pill">${tasks.filter(isDueToday).length} تسليم اليوم</span><span class="pill">${tasks.filter(isLate).length} متأخر</span><div class="person-actions"><button data-action="edit-account" data-name="${safeAttr(name)}">تعديل الحساب</button><button class="danger small-danger" data-action="remove-person" data-name="${safeAttr(name)}">حذف</button></div></div>`
   }).join('') || '<div class="panel">لا يوجد أعضاء فريق بعد.</div>';
 }
-async function addPerson(){
-  if(!isAdmin()) return alert('إضافة الأشخاص متاحة للأدمن فقط.');
-  const name=(prompt('اكتب اسم عضو الفريق الجديد:')||'').trim(); if(!name) return;
-  const username=(prompt('اكتب Username للحساب:', name.replace(/\s+/g,'.').toLowerCase())||'').trim(); if(!username) return;
-  if(normalizeUsers(state.users).some(u=>u.username===username || u.name===name)){ alert('الاسم أو Username موجود بالفعل.'); return; }
-  const password=prompt('اكتب Password للحساب — 8 أحرف على الأقل:')||''; if(password.length<8) return alert('كلمة المرور يجب أن تكون 8 أحرف على الأقل.');
-  const roleRaw=(prompt('نوع الحساب: اكتب admin أو standard','standard')||'standard').trim().toLowerCase();
-  const role=roleRaw==='admin'?'admin':'standard';
-  state.users.push({id:crypto.randomUUID(),name,username,passwordHash:await hashPassword(password),role,isActive:true,createdAt:new Date().toISOString()});
+function openAccountDialog(name=''){
+  if(!isAdmin()) return alert('إدارة الحسابات متاحة للأدمن فقط.');
+  const user=name ? getUserByName(name) : null;
+  $('#accountDialogTitle').textContent = user ? 'تعديل حساب' : 'إضافة حساب جديد';
+  $('#accountOldName').value = user?.name || '';
+  $('#accountName').value = user?.name || '';
+  $('#accountUsername').value = user?.username || '';
+  $('#accountPassword').value = user?.password || (user?'':generatePassword());
+  $('#accountNickname').value = user?.nickname || user?.name || '';
+  $('#accountEmail').value = user?.email || '';
+  $('#accountRole').value = user?.role || 'standard';
+  $('#accountDialog').showModal();
+}
+async function addPerson(){ openAccountDialog(''); }
+async function saveAccountForm(e){
+  e.preventDefault();
+  if(!isAdmin()) return alert('إدارة الحسابات متاحة للأدمن فقط.');
+  const oldName=$('#accountOldName').value;
+  const name=($('#accountName').value||'').trim();
+  const username=($('#accountUsername').value||'').trim();
+  const password=$('#accountPassword').value||'';
+  const nickname=($('#accountNickname').value||'').trim() || name;
+  const email=($('#accountEmail').value||'').trim();
+  const role=normalizeRole($('#accountRole').value);
+  if(!name || !username || !password){ return alert('لازم تدخل Name و UserName و Password.'); }
+  const dup=normalizeUsers(state.users).some(u=>(u.username===username || u.name===name) && u.name!==oldName);
+  if(dup) return alert('الاسم أو UserName مستخدم بالفعل.');
+  let user=oldName ? getUserByName(oldName) : null;
+  if(user){ Object.assign(user,{name,username,password,nickname,email,role,isActive:true}); }
+  else state.users.push({id:crypto.randomUUID(),name,username,password,nickname,email,role,isActive:true,createdAt:new Date().toISOString()});
+  if(oldName && oldName!==name){
+    state.people=getPeopleNames().map(p=>p===oldName?name:p);
+    state.tasks.forEach(t=>{ if(t.owner===oldName) t.owner=name; if(t.deliveredBy===oldName) t.deliveredBy=name; });
+    state.uploads.forEach(u=>{ if(u.by===oldName) u.by=name; });
+  }
   syncPeopleFromUsers();
+  $('#accountDialog').close();
   await save();
 }
-async function renamePerson(oldName){
-  if(!isAdmin()) return alert('تعديل الأشخاص متاح للأدمن فقط.');
-  const user=getUserByName(oldName);
-  const name=(prompt('تعديل اسم عضو الفريق:', oldName)||'').trim(); if(!name) return;
-  const username=(prompt('تعديل Username:', user?.username||oldName)||'').trim(); if(!username) return;
-  const roleRaw=(prompt('نوع الحساب: admin أو standard', user?.role||'standard')||'standard').trim().toLowerCase();
-  const role=roleRaw==='admin'?'admin':'standard';
-  const dup=normalizeUsers(state.users).some(u=>(u.username===username || u.name===name) && u.name!==oldName && u.username!==user?.username);
-  if(dup){ alert('الاسم أو Username مستخدم بالفعل.'); return; }
-  if(user){ user.name=name; user.username=username; user.role=role; user.isActive=true; }
-  else state.users.push({id:crypto.randomUUID(),name,username,passwordHash:'',role,isActive:true,createdAt:new Date().toISOString()});
-  state.people=getPeopleNames().map(p=>p===oldName?name:p);
-  state.tasks.forEach(t=>{ if(t.owner===oldName) t.owner=name; if(t.deliveredBy===oldName) t.deliveredBy=name; });
-  state.uploads.forEach(u=>{ if(u.by===oldName) u.by=name; });
-  syncPeopleFromUsers();
-  await save();
-}
+async function renamePerson(oldName){ openAccountDialog(oldName); }
 async function removePerson(name){
   if(!isAdmin()) return alert('حذف الأشخاص متاح للأدمن فقط.');
   if(name===DEFAULT_ADMIN.name) return alert('لا يمكن حذف حساب الأدمن الأساسي.');
@@ -356,12 +365,16 @@ function bindEvents(){
   $('#closeDrawer')?.addEventListener('click',()=>$('#drawer').classList.remove('open'));
   ['filterPerson','filterStatus','searchInput','dailyDate','calendarMonth','flowFilter'].forEach(id=>$('#'+id)?.addEventListener('input',renderAll));
   $('#todayBtn')?.addEventListener('click',()=>{$('#calendarMonth').value=monthNow();renderCalendar()});
-  $('#exportBtn')?.addEventListener('click',()=>{let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.download='brivviant-platform-data.json';a.click()});
-  $('#importInput')?.addEventListener('change',e=>{let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=async()=>{state=normalizeState(JSON.parse(r.result));await ensureDefaultAdmin();await save()};r.readAsText(f)});
+  $('#exportBtn')?.addEventListener('click',()=>{ if(!isAdmin()) return alert('Export متاح للأدمن فقط.'); let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.download='brivviant-platform-data.json';a.click()});
+  $('#importInput')?.addEventListener('change',e=>{ if(!isAdmin()) return alert('Import متاح للأدمن فقط.'); let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=async()=>{state=normalizeState(JSON.parse(r.result));await ensureDefaultAdmin();await save()};r.readAsText(f)});
   $('#saveTask')?.addEventListener('click',saveTaskForm);
   $('#deleteTask')?.addEventListener('click',archiveFromDialog);
   $('#cancelTask')?.addEventListener('click',()=>$('#taskDialog').close());
   $('#addPersonBtn')?.addEventListener('click',addPerson);
+  $('#saveAccount')?.addEventListener('click',saveAccountForm);
+  $('#cancelAccount')?.addEventListener('click',()=>$('#accountDialog').close());
+  $('#generatePasswordBtn')?.addEventListener('click',()=>{$('#accountPassword').value=generatePassword();});
+  $('#logoutBtn')?.addEventListener('click',logout);
   $('#openUploadDialog')?.addEventListener('click',openUploadDialog);
   $('#cancelUpload')?.addEventListener('click',()=>$('#uploadDialog').close());
   $('#uploadChannel')?.addEventListener('change',updateUploadPrograms);
@@ -371,8 +384,8 @@ function bindEvents(){
   document.addEventListener('click',async e=>{
     const el=e.target.closest('[data-action]'); if(!el)return;
     const a=el.dataset.action;
-    if((a==='open-task-dialog'||a==='edit-task'||a==='archive-task'||a==='delete-calendar'||a==='rename-person'||a==='remove-person'||a==='reset-password') && !isAdmin()){
-      if(a!=='reset-password') return alert('هذا الإجراء متاح للأدمن فقط.');
+    if((a==='open-task-dialog'||a==='edit-task'||a==='archive-task'||a==='delete-calendar'||a==='rename-person'||a==='edit-account'||a==='remove-person') && !isAdmin()){
+      return alert('هذا الإجراء متاح للأدمن فقط.');
     }
     if(a==='open-channel') openChannel(el.dataset.channel);
     if(a==='open-task-dialog') openTaskDialog(el.dataset.channel,el.dataset.program);
@@ -383,25 +396,9 @@ function bindEvents(){
     if(a==='delete-calendar') { e.stopPropagation(); await deleteTaskFromCalendar(el.dataset.id); }
     if(a==='save-delay') await saveDelayReasonFromCard(el,el.dataset.id);
     if(a==='rename-person') await renamePerson(el.dataset.name);
+    if(a==='edit-account') openAccountDialog(el.dataset.name);
     if(a==='remove-person') await removePerson(el.dataset.name);
-    if(a==='reset-password') await resetPasswordForUser(el.dataset.name);
   });
-}
-
-async function resetPasswordForUser(name){
-  const me=currentUser();
-  const target=getUserByName(name);
-  if(!target) return alert('الحساب غير موجود.');
-  if(!isAdmin() && me?.username!==target.username) return alert('يمكنك تغيير كلمة مرور حسابك فقط.');
-  const current=prompt('اكتب كلمة المرور الحالية للتأكيد:'); if(!current) return;
-  const currentHash=await hashPassword(current);
-  if(currentHash!==target.passwordHash && current !== DEFAULT_ADMIN.password) return alert('كلمة المرور الحالية غير صحيحة.');
-  const next=prompt('اكتب كلمة المرور الجديدة — 8 أحرف على الأقل:'); if(!next || next.length<8) return alert('كلمة المرور يجب أن تكون 8 أحرف على الأقل.');
-  const confirmPass=prompt('أعد كتابة كلمة المرور الجديدة:'); if(next!==confirmPass) return alert('كلمتا المرور غير متطابقتين.');
-  target.passwordHash=await hashPassword(next);
-  delete target.password;
-  await save();
-  alert('تم تغيير كلمة المرور بشكل آمن.');
 }
 
 function applyRolePermissions(){
@@ -411,38 +408,49 @@ function applyRolePermissions(){
   $$('[data-action="open-task-dialog"], #addPersonBtn, [data-action="rename-person"], [data-action="remove-person"], [data-action="archive-task"], .calendar-delete-btn').forEach(el=>{ el.classList.toggle('restricted', !admin); });
   $$('[data-action="edit-task"]').forEach(el=>{ el.classList.toggle('restricted', !admin); });
   const me=currentUser();
+  const adminTools=$('#exportBtn')?.parentElement;
+  $('#exportBtn')?.classList.toggle('restricted', !admin);
+  document.querySelector('.importLabel')?.classList.toggle('restricted', !admin);
+  updateProfileBox();
   if($('#uploadBy') && me && !admin){ $('#uploadBy').value=me.name; $('#uploadBy').disabled=true; } else if($('#uploadBy')) $('#uploadBy').disabled=false;
 }
 async function login(){
   await ensureDefaultAdmin();
-  const err=$('#loginError');
+  state.users=normalizeUsers(state.users);
+  const err=$('#loginError'); if(err) err.textContent='';
   const username=($('#loginUsername')?.value||'').trim();
   const password=$('#loginPassword')?.value||'';
+  if(!username || !password){ if(err) err.textContent='لازم تدخل UserName و Password.'; return; }
   const user=normalizeUsers(state.users).find(u=>u.username===username && u.isActive!==false);
-  const passHash=await hashPassword(password);
-  if(!user || (user.passwordHash && user.passwordHash!==passHash) || (!user.passwordHash && username!==DEFAULT_ADMIN.username)){
-    if(err) err.textContent='Username أو Password غير صحيح';
+  if(!user || String(user.password||'') !== String(password)){
+    if(err) err.textContent='UserName أو Password غلط. اكتب البيانات صح.';
     return;
   }
   setSession({username:user.username,name:user.name,role:user.role});
   $('#loginOverlay').style.display='none';
+  updateProfileBox();
   applyRolePermissions(); renderAll();
+}
+function logout(){ clearSession(); $('#loginUsername').value=''; $('#loginPassword').value=''; $('#loginOverlay').style.display='flex'; updateProfileBox(); }
+function updateProfileBox(){
+  const box=$('#profileBox'); if(!box) return;
+  const me=currentUser();
+  if(!me){ box.innerHTML='<small>Not logged in</small>'; return; }
+  box.innerHTML=`<div class="profile-name">${safe(me.nickname||me.name)}</div><small>@${safe(me.username)} • ${safe(roleLabel(me.role))}</small><small>${safe(me.email||'')}</small>`;
 }
 async function showForgotPassword(){
   await ensureDefaultAdmin();
-  const username=(prompt('اكتب Username:')||'').trim(); if(!username) return;
-  const user=normalizeUsers(state.users).find(u=>u.username===username && u.isActive!==false);
+  const username=(prompt('اكتب UserName:')||'').trim(); if(!username) return;
+  const user=(state.users||[]).find(u=>u.username===username && u.isActive!==false);
   if(!user) return alert('الحساب غير موجود.');
-  const current=prompt('اكتب كلمة المرور الحالية للتأكيد:'); if(!current) return;
-  const currentHash=await hashPassword(current);
-  if(user.passwordHash!==currentHash && !(username===DEFAULT_ADMIN.username && current===DEFAULT_ADMIN.password)) return alert('كلمة المرور الحالية غير صحيحة.');
-  const next=prompt('كلمة المرور الجديدة — 8 أحرف على الأقل:'); if(!next || next.length<8) return alert('كلمة المرور يجب أن تكون 8 أحرف على الأقل.');
+  const current=prompt('اكتب كلمة المرور الحالية:'); if(!current) return;
+  if(String(user.password||user.passwordHash||user.password_hash||'') !== String(current)) return alert('كلمة المرور الحالية غير صحيحة.');
+  const next=prompt('كلمة المرور الجديدة:'); if(!next) return alert('لازم تدخل كلمة مرور جديدة.');
   const confirmPass=prompt('أعد كتابة كلمة المرور الجديدة:'); if(next!==confirmPass) return alert('كلمتا المرور غير متطابقتين.');
-  const real=(state.users||[]).find(u=>u.username===username); real.passwordHash=await hashPassword(next); delete real.password;
+  user.password=next; delete user.passwordHash; delete user.password_hash;
   await save();
   alert('تم تغيير كلمة المرور. سجل الدخول بالكلمة الجديدة.');
 }
-
 async function boot(){
   await ensureDefaultAdmin();
   $('#dailyDate').value=today(); $('#calendarMonth').value=monthNow();

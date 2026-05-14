@@ -20,7 +20,9 @@ create table if not exists public.people (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
   username text unique,
-  password_hash text,
+  password text,
+  nickname text,
+  email text,
   role text default 'standard' check (role in ('admin','standard')),
   is_active boolean default true,
   created_at timestamptz default now()
@@ -29,7 +31,9 @@ create table if not exists public.people (
 
 
 alter table public.people add column if not exists username text;
-alter table public.people add column if not exists password_hash text;
+alter table public.people add column if not exists password text;
+alter table public.people add column if not exists nickname text;
+alter table public.people add column if not exists email text;
 alter table public.people add column if not exists role text default 'standard';
 alter table public.people add column if not exists is_active boolean default true;
 do $$ begin
@@ -110,19 +114,23 @@ where a.name = b.name
 and a.id > b.id;
 
 
--- Default admin account stored in database with SHA-256 password hash.
+-- Default admin account stored in database as plain text password per project requirement.
 -- Username: Brivviant
 -- Password: Brivviant@123456
-insert into public.people (name, username, password_hash, role, is_active)
+insert into public.people (name, username, password, nickname, email, role, is_active)
 values (
   'Brivviant',
   'Brivviant',
-  encode(digest('Brivviant@123456', 'sha256'), 'hex'),
+  'Brivviant@123456',
+  'Main Admin',
+  '',
   'admin',
   true
 )
 on conflict (name) do update set
   username = excluded.username,
-  password_hash = excluded.password_hash,
+  password = excluded.password,
+  nickname = excluded.nickname,
+  email = excluded.email,
   role = 'admin',
   is_active = true;
