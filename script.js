@@ -259,3 +259,90 @@ function bindEvents(){
 $('#dailyDate').value=today(); $('#calendarMonth').value=monthNow();
 bindEvents();
 initOnline();
+
+
+/* ===== Authentication & Role Permissions ===== */
+const AUTH_KEY = 'brivviant_auth_session_v1';
+const DEFAULT_ADMIN = { username: 'Brivviant', password: 'Brivviant@123456', role: 'admin' };
+state.users = state.users || [DEFAULT_ADMIN];
+if (!state.users.find(u => u.username === DEFAULT_ADMIN.username)) state.users.push(DEFAULT_ADMIN);
+
+function getSession(){ try { return JSON.parse(localStorage.getItem(AUTH_KEY)||'null'); } catch(e){ return null; } }
+function setSession(s){ localStorage.setItem(AUTH_KEY, JSON.stringify(s)); }
+function currentSession(){ return getSession(); }
+function isAdmin(){ return currentSession()?.role === 'admin'; }
+
+function applyRolePermissions(){
+  const admin = isAdmin();
+  document.querySelectorAll('button').forEach(btn=>{
+    const txt = (btn.textContent || '').trim();
+    const onclick = btn.getAttribute('onclick') || '';
+    const restricted = /إضافة شخص|حذف|Delete|Remove|Rename/.test(txt) ||
+      /addPerson|removePerson|renamePerson|deleteTask/.test(onclick);
+    if (restricted && !admin) btn.classList.add('restricted');
+    else btn.classList.remove('restricted');
+  });
+}
+
+(function(){
+  const overlay = document.getElementById('loginOverlay');
+  const btn = document.getElementById('loginBtn');
+  const err = document.getElementById('loginError');
+  const session = getSession();
+  if (session && session.username){
+    overlay.style.display = 'none';
+    setTimeout(applyRolePermissions, 300);
+  }
+  btn.addEventListener('click', ()=>{
+    const username = document.getElementById('loginUsername').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const user = (state.users || []).find(u => u.username === username && u.password === password);
+    if (!user){ err.textContent = 'Invalid username or password'; return; }
+    setSession({ username: user.username, role: user.role || 'standard' });
+    overlay.style.display = 'none';
+    applyRolePermissions();
+  });
+})();
+
+// Protect sensitive functions
+const _addPerson = addPerson;
+addPerson = function(){
+  if (!isAdmin()) return alert('Only admins can add team members.');
+  const username = prompt('Username');
+  if (!username) return;
+  const password = prompt('Password');
+  if (!password) return;
+  const role = (prompt('Role (admin / standard)', 'standard') || 'standard').toLowerCase() === 'admin' ? 'admin' : 'standard';
+  state.users = state.users || [];
+  state.users.push({ username, password, role });
+  saveState();
+  renderTeam?.();
+  alert('User created successfully.');
+};
+
+const _renamePerson = renamePerson;
+renamePerson = function(...args){
+  if (!isAdmin()) return alert('Only admins can edit team members.');
+  return _renamePerson.apply(this, args);
+};
+
+const _removePerson = removePerson;
+removePerson = function(...args){
+  if (!isAdmin()) return alert('Only admins can remove team members.');
+  return _removePerson.apply(this, args);
+};
+
+const _deleteTask = deleteTask;
+deleteTask = function(...args){
+  if (!isAdmin()) return alert('Only admins can delete tasks.');
+  return _deleteTask.apply(this, args);
+};
+
+const _openTaskDialog = openTaskDialog;
+openTaskDialog = function(taskId){
+  if (!isAdmin() && !taskId) return alert('Only admins can create tasks.');
+  return _openTaskDialog.apply(this, arguments);
+};
+
+// Re-apply after each render cycle
+setInterval(applyRolePermissions, 1000);

@@ -40,3 +40,13 @@
 .calendar-delete-btn{position:absolute;left:6px;top:6px;width:22px;height:22px;min-width:22px;padding:0;border-radius:50%;background:rgba(255,107,107,.2)!important;color:#ffd6d6!important;border:1px solid rgba(255,107,107,.55)!important;font-size:14px;line-height:20px}
 .calendar-delete-btn:hover{background:rgba(255,107,107,.55)!important;color:#fff!important}
 button:disabled{opacity:.45;cursor:not-allowed}
+
+/* Login Panel */
+.login-overlay{position:fixed;inset:0;background:rgba(8,12,30,.78);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;z-index:99999}
+.login-panel{width:420px;max-width:92vw;background:rgba(20,24,45,.95);border:1px solid rgba(255,255,255,.08);border-radius:28px;padding:36px;box-shadow:0 30px 80px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:14px;text-align:center}
+.login-logo{width:90px;margin:0 auto 6px auto}
+.login-panel h2{margin:0 0 8px 0;color:#fff}
+.login-panel input{width:100%;padding:14px 16px;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.06);color:#fff;outline:none;box-sizing:border-box}
+.login-panel button{padding:14px;border:none;border-radius:14px;cursor:pointer;font-weight:700}
+.login-error{min-height:20px;color:#ff8e8e;font-size:13px}
+.restricted{display:none !important}
