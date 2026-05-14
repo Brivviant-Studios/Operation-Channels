@@ -39,6 +39,14 @@ function clearSession(){ localStorage.removeItem(AUTH_KEY); }
 function currentSession(){ return getSession(); }
 function currentUser(){ const ss=currentSession(); return ss ? normalizeUsers(state.users).find(u=>u.username===ss.username) || ss : null; }
 function isAdmin(){ return (currentUser()?.role || currentSession()?.role) === 'admin'; }
+
+function canEditDelayReason(t){
+  if(!t || !isLate(t)) return false;
+  const me=currentUser() || currentSession() || {};
+  const owner=String(t.owner||'').trim().toLowerCase();
+  const names=[me.name, me.username, me.nickname, me.email].filter(Boolean).map(v=>String(v).trim().toLowerCase());
+  return !!owner && names.includes(owner);
+}
 function nowIso(){ return new Date().toISOString(); }
 function nowText(){ return new Date().toLocaleString('ar-EG', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
 function getActorSnapshot(fallback={}){
@@ -297,11 +305,18 @@ function openChannel(chName){
   p.scrollIntoView({behavior:'smooth'});
 }
 function showProgramTasks(ch,pr){let box=$(`#tasks-${slug(ch+pr)}`); if(!box)return; let tasks=activeTasks().filter(t=>t.channel===ch&&t.program===pr).sort((a,b)=>(a.due||'').localeCompare(b.due||''));box.innerHTML=tasks.length?tasks.map(taskHtml).join(''):'<p class="muted">لا توجد تاسكات بعد.</p>'}
-function taskHtml(t){
+function taskHtml(t, opts={}){
   const done=isDone(t), late=isLate(t), dueNow=isDueToday(t);
   const dueLabel=t.due ? new Date(t.due+'T00:00:00').toLocaleDateString('ar-EG') : '-';
   const delivered=t.deliveredAt?`<div class="task-delivered">✓ تم رفع التسليم بواسطة ${safe(t.deliveredBy||t.owner)} — ${safe(new Date(t.deliveredAt).toLocaleString('ar-EG',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}))}</div>`:'';
-  const delay=late?`<div class="delay-note">سبب التأخير الحالي: ${safe(t.delayReason||'لم يتم كتابة سبب التأخير بعد')}</div><div class="delay-editor"><label>اكتب / عدّل سبب التأخير<textarea data-delay-for="${safeAttr(t.id)}" placeholder="اكتب سبب التأخير هنا بوضوح...">${safe(t.delayReason||'')}</textarea></label><button class="delay-save-btn" data-action="save-delay" data-id="${safeAttr(t.id)}">حفظ سبب التأخير</button></div>`:'';
+  const canEditDelay=canEditDelayReason(t);
+  const isMineView=!!opts.myTasks;
+  const delay=late ? `<div class="delay-note locked-delay">سبب التأخير الحالي: ${safe(t.delayReason||'لم يتم كتابة سبب التأخير بعد')}</div>` : '';
+  const myControls = isMineView ? `<div class="mytask-controls">
+    <label>تغيير حالة التاسك<select data-my-status-for="${safeAttr(t.id)}">${(state.statuses||[]).map(st=>`<option ${st===t.status?'selected':''}>${safe(st)}</option>`).join('')}</select></label>
+    <label>سبب التأخير<textarea data-delay-for="${safeAttr(t.id)}" placeholder="اكتب سبب التأخير هنا لو التاسك متأخر...">${safe(t.delayReason||'')}</textarea></label>
+    <button class="delay-save-btn" data-action="save-mytask" data-id="${safeAttr(t.id)}">حفظ حالة التاسك / سبب التأخير</button>
+  </div>` : '';
   const flags=`${late?'<span class="status late-flag">متأخر</span>':''}${dueNow?'<span class="status today-flag">تسليم اليوم</span>':''}${isArchived(t)?'<span class="status archived-flag">محفوظ في الكالندر</span>':''}`;
   const hideBtn = isArchived(t) ? '' : `<button class="archive-btn" data-action="archive-task" data-id="${safeAttr(t.id)}">إخفاء من التاسكات</button>`;
   return `<div class="task-card pro-task ${done?'done-task':''} ${late?'late-task':''} ${dueNow?'today-task':''} ${isArchived(t)?'archived-task':''}">
@@ -317,19 +332,48 @@ function taskHtml(t){
         <span><em>Priority</em>${safe(t.priority||'-')}</span>
         ${flags}
       </div>
-      ${t.notes?`<div class="task-notes">${safe(t.notes)}</div>`:''}${delay}${delivered}
+      ${t.notes?`<div class="task-notes">${safe(t.notes)}</div>`:''}${delay}${myControls}${delivered}
     </div>
     <div class="task-actions"><button data-action="edit-task" data-id="${safeAttr(t.id)}">تعديل</button><button class="done-btn" data-action="mark-done" data-id="${safeAttr(t.id)}">${done?'تم التسليم ✓':'علّم كمنتهي ✓'}</button>${hideBtn}</div>
   </div>`
 }
 
-async function markTaskDone(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; const oldStatus=t.status; t.status='تم التسليم'; t.deliveredAt=t.deliveredAt||new Date().toISOString(); t.deliveredBy=t.deliveredBy||currentUser()?.name||t.owner; t.updatedAt=new Date().toISOString(); await logAction('TASK_DONE', `تغيير الحالة من ${oldStatus} إلى تم التسليم`, t.title); await save(); }
+async function markTaskDone(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; const me=currentUser(); if(!isAdmin() && t.owner!==me?.name){ await logAction('TASK_DONE_DENIED','محاولة غير مصرح بها لتغيير حالة تاسك ليس مخصصًا للحساب الحالي',t.title); return alert('تغيير حالة التاسك متاح فقط لصاحب التاسك من My Tasks.'); } const oldStatus=t.status; t.status='تم التسليم'; t.deliveredAt=t.deliveredAt||new Date().toISOString(); t.deliveredBy=t.deliveredBy||me?.name||t.owner; t.delayReason=''; t.updatedAt=new Date().toISOString(); await logAction('TASK_DONE', `تغيير الحالة من ${oldStatus} إلى تم التسليم`, t.title); await save(); }
 async function archiveTaskFromLists(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; if(!confirm('إخفاء التاسك من قوائم التاسكات؟ سيظل محفوظًا وظاهرًا داخل الكالندر.')) return; t.archivedFromTasks=true; t.archivedAt=new Date().toISOString(); t.updatedAt=new Date().toISOString(); await logAction('TASK_ARCHIVE', 'إخفاء التاسك من قوائم التاسكات مع بقائه في الكالندر', t.title); await save(); }
 async function deleteTaskFromCalendar(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; if(!confirm('حذف نهائي من الكالندر والبيانات؟ لا يمكن الرجوع إلا من نسخة JSON احتياطية.')) return; await logAction('TASK_DELETE', 'حذف نهائي من الكالندر والبيانات', t.title); state.tasks=state.tasks.filter(x=>x.id!==id); state.uploads=(state.uploads||[]).map(u=>u.taskId===id?{...u, taskId:'', taskTitle:(u.taskTitle||'')+' — التاسك محذوف من الكالندر'}:u); await save(); }
-async function saveDelayReasonFromCard(btn,id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; const card=btn.closest('.task-card'); const textarea=card?.querySelector(`textarea[data-delay-for="${id}"]`); const old=t.delayReason||''; t.delayReason=(textarea?.value||'').trim(); if(isLate(t)) t.status='متأخر'; t.updatedAt=new Date().toISOString(); await logAction('TASK_DELAY_REASON', `تعديل سبب التأخير من: ${old || '-'} إلى: ${t.delayReason || '-'}`, t.title); await save(); }
+async function saveDelayReasonFromCard(btn,id){
+  return saveMyTaskUpdate(btn,id);
+}
+async function saveMyTaskUpdate(btn,id){
+  const t=state.tasks.find(x=>x.id===id);
+  if(!t) return;
+  if(!canEditDelayReason({...t, due:t.due}) && t.owner!==currentUser()?.name){
+    await logAction('MYTASK_UPDATE_DENIED', 'محاولة غير مصرح بها لتعديل تاسك من My Tasks', t.title);
+    return alert('تعديل الحالة وسبب التأخير متاح فقط لصاحب التاسك من My Tasks.');
+  }
+  const card=btn.closest('.task-card');
+  const statusSel=card?.querySelector(`select[data-my-status-for="${id}"]`);
+  const textarea=card?.querySelector(`textarea[data-delay-for="${id}"]`);
+  const oldStatus=t.status||'';
+  const oldDelay=t.delayReason||'';
+  const newStatus=statusSel?.value || oldStatus;
+  const newDelay=(textarea?.value||'').trim();
+  if(newStatus==='متأخر' && !newDelay){
+    return alert('لازم تكتب سبب التأخير قبل حفظ التاسك كمتأخر.');
+  }
+  t.status=newStatus;
+  t.delayReason=newStatus==='متأخر' || isLate(t) ? newDelay : '';
+  if(newStatus==='تم التسليم'){
+    t.deliveredAt=t.deliveredAt||new Date().toISOString();
+    t.deliveredBy=t.deliveredBy||currentUser()?.name||t.owner;
+  }
+  t.updatedAt=new Date().toISOString();
+  await logAction('MYTASK_UPDATE', `تعديل My Tasks — الحالة من ${oldStatus||'-'} إلى ${t.status||'-'} — سبب التأخير من: ${oldDelay||'-'} إلى: ${t.delayReason||'-'}`, t.title);
+  await save();
+}
 function openTaskDialog(ch,pr){fillSelects();$('#taskForm').reset();$('#taskId').value='';$('#taskChannel').value=ch;$('#taskProgram').value=pr;$('#deleteTask').classList.add('hidden');$('#deleteTask').textContent='إخفاء من التاسكات';$('#dialogTitle').textContent=`إضافة تاسك — ${pr}`;$('#taskDue').value=today();$('#taskDialog').showModal()}
-function editTask(id){let t=state.tasks.find(x=>x.id===id); if(!t)return; fillSelects();$('#taskId').value=t.id;$('#taskChannel').value=t.channel;$('#taskProgram').value=t.program;$('#taskEpisodeName').value=t.episodeName||'';$('#taskEpisodeNumber').value=t.episodeNumber||'';$('#taskTitle').value=t.title;$('#taskOwner').value=t.owner;$('#taskStatus').value=t.status;$('#taskDue').value=t.due;$('#taskPriority').value=t.priority;$('#taskNotes').value=t.notes||'';$('#taskDelayReason').value=t.delayReason||'';$('#deleteTask').classList.remove('hidden');$('#deleteTask').textContent=isArchived(t)?'مخفي من التاسكات':'إخفاء من التاسكات';$('#deleteTask').disabled=isArchived(t);$('#dialogTitle').textContent='تعديل تاسك';$('#taskDialog').showModal()}
-async function saveTaskForm(e){e.preventDefault(); if(!isAdmin()) return alert('إنشاء أو تعديل التاسكات متاح للأدمن فقط.'); let id=$('#taskId').value||crypto.randomUUID();let old=state.tasks.find(x=>x.id===id)||{}; const isNew=!old.id; let t={...old,id,channel:$('#taskChannel').value,program:$('#taskProgram').value,episodeName:$('#taskEpisodeName').value,episodeNumber:$('#taskEpisodeNumber').value,title:$('#taskTitle').value,owner:$('#taskOwner').value,status:$('#taskStatus').value,due:$('#taskDue').value,priority:$('#taskPriority').value,notes:$('#taskNotes').value,delayReason:$('#taskDelayReason').value,updatedAt:new Date().toISOString(),createdAt:old.createdAt||new Date().toISOString()};state.tasks=state.tasks.filter(x=>x.id!==id).concat(t); await logAction(isNew?'TASK_CREATE':'TASK_UPDATE', `${isNew?'إنشاء':'تعديل'} تاسك — المسؤول: ${t.owner} — التسليم: ${t.due} — الحالة: ${t.status}`, t.title); $('#taskDialog').close();await save()}
+function editTask(id){let t=state.tasks.find(x=>x.id===id); if(!t)return; fillSelects();$('#taskId').value=t.id;$('#taskChannel').value=t.channel;$('#taskProgram').value=t.program;$('#taskEpisodeName').value=t.episodeName||'';$('#taskEpisodeNumber').value=t.episodeNumber||'';$('#taskTitle').value=t.title;$('#taskOwner').value=t.owner;$('#taskStatus').value=t.status;$('#taskDue').value=t.due;$('#taskPriority').value=t.priority;$('#taskNotes').value=t.notes||'';$('#taskDelayReason').value=t.delayReason||''; const canDelay=canEditDelayReason(t); $('#taskDelayReason').readOnly=!canDelay; $('#taskDelayReason').title=canDelay?'':'سبب التأخير يتعدل فقط من حساب الشخص المسؤول عن التاسك'; $('#deleteTask').classList.remove('hidden');$('#deleteTask').textContent=isArchived(t)?'مخفي من التاسكات':'إخفاء من التاسكات';$('#deleteTask').disabled=isArchived(t);$('#dialogTitle').textContent='تعديل تاسك';$('#taskDialog').showModal()}
+async function saveTaskForm(e){e.preventDefault(); if(!isAdmin()) return alert('إنشاء أو تعديل التاسكات متاح للأدمن فقط.'); let id=$('#taskId').value||crypto.randomUUID();let old=state.tasks.find(x=>x.id===id)||{}; const isNew=!old.id; const formDelay=($('#taskDelayReason')?.value||'').trim(); let t={...old,id,channel:$('#taskChannel').value,program:$('#taskProgram').value,episodeName:$('#taskEpisodeName').value,episodeNumber:$('#taskEpisodeNumber').value,title:$('#taskTitle').value,owner:$('#taskOwner').value,status:$('#taskStatus').value,due:$('#taskDue').value,priority:$('#taskPriority').value,notes:$('#taskNotes').value,delayReason:(isNew ? '' : (canEditDelayReason(old) ? formDelay : (old.delayReason||''))),updatedAt:new Date().toISOString(),createdAt:old.createdAt||new Date().toISOString()};state.tasks=state.tasks.filter(x=>x.id!==id).concat(t); await logAction(isNew?'TASK_CREATE':'TASK_UPDATE', `${isNew?'إنشاء':'تعديل'} تاسك — المسؤول: ${t.owner} — التسليم: ${t.due} — الحالة: ${t.status}`, t.title); $('#taskDialog').close();await save()}
 async function archiveFromDialog(){ if(!isAdmin()) return alert('حذف التاسكات متاح للأدمن فقط.'); let id=$('#taskId').value;let t=state.tasks.find(x=>x.id===id);if(t){t.archivedFromTasks=true;t.archivedAt=new Date().toISOString();t.updatedAt=new Date().toISOString(); await logAction('TASK_ARCHIVE','إخفاء من نافذة تعديل التاسك', t.title);}$('#taskDialog').close();await save()}
 function renderDaily(){let date=$('#dailyDate')?.value;let arr=activeTasks().filter(t=>t.due===date).sort((a,b)=>a.owner.localeCompare(b.owner));$('#dailyList').innerHTML=arr.length?arr.map(taskHtml).join(''):'<div class="panel">لا توجد تسليمات في هذا اليوم.</div>'}
 function renderCalendar(){ const wrap=$('#calendarGrid'); if(!wrap)return; const val=$('#calendarMonth').value||monthNow(); const [y,m]=val.split('-').map(Number); const first=new Date(y,m-1,1); const last=new Date(y,m,0); const startDay=(first.getDay()+6)%7; let html=''; for(let i=0;i<startDay;i++) html+='<div class="calendar-day empty"></div>'; for(let d=1; d<=last.getDate(); d++){ const date=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; const arr=state.tasks.filter(t=>t.due===date); html+=`<div class="calendar-day"><div class="day-number">${d}</div>${arr.map(t=>`<span class="mini-task ${isArchived(t)?'mini-archived':''}"><span data-action="edit-task" data-id="${safeAttr(t.id)}"><strong>${safe(t.title)}</strong>${safe(t.owner)} • ح${safe(t.episodeNumber||'-')} ${isArchived(t)?'• محفوظ بالكالندر':''}</span><button class="calendar-delete-btn" data-action="delete-calendar" data-id="${safeAttr(t.id)}" title="حذف نهائي من الكالندر">×</button></span>`).join('')}</div>`; } wrap.innerHTML=html; }
@@ -421,7 +465,7 @@ function renderMyTasks(){
   const me=currentUser();
   if(!me){ box.innerHTML='<div class="panel">سجل الدخول أولاً.</div>'; return; }
   const arr=activeTasks().filter(t=>t.owner===me.name).sort((a,b)=>(a.due||'').localeCompare(b.due||''));
-  box.innerHTML=arr.length?arr.map(taskHtml).join(''):'<div class="panel">لا توجد تاسكات مخصصة لحسابك.</div>';
+  box.innerHTML=arr.length?arr.map(t=>taskHtml(t,{myTasks:true})).join(''):'<div class="panel">لا توجد تاسكات مخصصة لحسابك.</div>'; 
 }
 function openUploadDialog(){ fillSelects(); $('#uploadForm').reset(); updateUploadPrograms(); const me=currentUser(); if(me && !isAdmin()){ $('#uploadBy').value=me.name; $('#uploadBy').disabled=true; } $('#uploadDialog').showModal(); }
 async function saveUploadForm(e){
@@ -475,6 +519,7 @@ function bindEvents(){
     if(a==='archive-task') await archiveTaskFromLists(el.dataset.id);
     if(a==='delete-calendar') { e.stopPropagation(); await deleteTaskFromCalendar(el.dataset.id); }
     if(a==='save-delay') await saveDelayReasonFromCard(el,el.dataset.id);
+    if(a==='save-mytask') await saveMyTaskUpdate(el,el.dataset.id);
     if(a==='rename-person') await renamePerson(el.dataset.name);
     if(a==='edit-account') openAccountDialog(el.dataset.name);
     if(a==='remove-person') await removePerson(el.dataset.name);
@@ -538,19 +583,36 @@ function updateProfileBox(){
   if(!me){ box.innerHTML='<small>Not logged in</small>'; return; }
   box.innerHTML=`<div class="profile-name">${safe(me.nickname||me.name)}</div><small>@${safe(me.username)} • ${safe(roleLabel(me.role))}</small><small>${safe(me.email||'')}</small>`;
 }
-async function showForgotPassword(){
+function showForgotPassword(){
+  const panel=$('#passwordChangePanel');
+  panel?.classList.toggle('hidden');
+  if(panel && !panel.classList.contains('hidden')){
+    $('#changeUsername').value=$('#loginUsername')?.value || '';
+    $('#changeCurrentPassword').value='';
+    $('#changeNewPassword').value='';
+    $('#changeConfirmPassword').value='';
+    $('#passwordChangeError').textContent='';
+  }
+}
+async function savePasswordChange(){
   await ensureDefaultAdmin();
-  const username=(prompt('اكتب UserName:')||'').trim(); if(!username) return;
+  const err=$('#passwordChangeError'); if(err) err.textContent='';
+  const username=($('#changeUsername')?.value||'').trim();
+  const current=$('#changeCurrentPassword')?.value||'';
+  const next=$('#changeNewPassword')?.value||'';
+  const confirmPass=$('#changeConfirmPassword')?.value||'';
+  if(!username || !current || !next || !confirmPass){ if(err) err.textContent='لازم تملأ كل البيانات.'; return; }
   const user=(state.users||[]).find(u=>u.username===username && u.isActive!==false);
-  if(!user) return alert('الحساب غير موجود.');
-  const current=prompt('اكتب كلمة المرور الحالية:'); if(!current) return;
-  if(String(user.password||user.passwordHash||user.password_hash||'') !== String(current)) return alert('كلمة المرور الحالية غير صحيحة.');
-  const next=prompt('كلمة المرور الجديدة:'); if(!next) return alert('لازم تدخل كلمة مرور جديدة.');
-  const confirmPass=prompt('أعد كتابة كلمة المرور الجديدة:'); if(next!==confirmPass) return alert('كلمتا المرور غير متطابقتين.');
+  if(!user){ if(err) err.textContent='الحساب غير موجود.'; return; }
+  if(String(user.password||user.passwordHash||user.password_hash||'') !== String(current)){ if(err) err.textContent='كلمة المرور الحالية غير صحيحة.'; return; }
+  if(next.length < 6){ if(err) err.textContent='كلمة المرور الجديدة لازم تكون 6 حروف/أرقام على الأقل.'; return; }
+  if(next!==confirmPass){ if(err) err.textContent='كلمتا المرور غير متطابقتين.'; return; }
   user.password=next; delete user.passwordHash; delete user.password_hash;
   await logAction('PASSWORD_CHANGE', `تغيير كلمة مرور الحساب ${user.name}`, user.name, user);
   await save();
-  alert('تم تغيير كلمة المرور. سجل الدخول بالكلمة الجديدة.');
+  $('#passwordChangePanel')?.classList.add('hidden');
+  if($('#loginPassword')) $('#loginPassword').value='';
+  if($('#loginError')) $('#loginError').textContent='تم تغيير كلمة المرور. سجل الدخول بالكلمة الجديدة.';
 }
 async function boot(){
   await ensureDefaultAdmin();
@@ -560,6 +622,8 @@ async function boot(){
   $('#loginBtn')?.addEventListener('click',e=>{ e.preventDefault(); login(); });
   $('#loginPassword')?.addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
   $('#forgotPasswordBtn')?.addEventListener('click',showForgotPassword);
+  $('#savePasswordChangeBtn')?.addEventListener('click',savePasswordChange);
+  $('#cancelPasswordChangeBtn')?.addEventListener('click',()=>$('#passwordChangePanel')?.classList.add('hidden'));
   await initOnline();
   await ensureDefaultAdmin();
   const session=currentSession();

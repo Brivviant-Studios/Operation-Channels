@@ -67,3 +67,50 @@ button:disabled{opacity:.45;cursor:not-allowed}
   background:linear-gradient(135deg,rgba(255,255,255,.07),rgba(255,255,255,.025));
 }
 .task-main{min-width:0;display:grid;gap:12px}.task-headline{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.task-title-wrap{min-width:0}.task-title-wrap b{display:block;font-size:18px;line-height:1.45;color:#fff;overflow-wrap:anywhere}.task-title-wrap small{color:var(--muted);font-size:12px;margin-top:2px}.pro-meta{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px!important}.pro-meta span{margin:0;padding:10px 12px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.035);min-height:54px;display:flex;flex-direction:column;gap:3px;color:#fff}.pro-meta span em{font-style:normal;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.6px}.pro-meta .status{display:inline-flex!important;min-height:auto;align-items:center;justify-content:center}.task-notes{padding:12px 14px;border-radius:16px;background:rgba(0,95,90,.13);border:1px solid rgba(0,95,90,.28);color:#eafffb;line-height:1.7;overflow-wrap:anywhere}.task-delivered{padding:10px 12px;border-radius:14px;background:rgba(183,226,168,.12);border:1px solid rgba(183,226,168,.32);color:#cffff4;font-weight:800}.task-actions{min-width:160px;align-content:start;justify-content:flex-start;flex-direction:column}.task-actions button{width:100%;white-space:nowrap}.log-toolbar{display:grid;grid-template-columns:1fr 220px;gap:12px;margin-bottom:14px}.logs-list{display:grid;gap:12px}.log-card{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.025));border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:0 14px 45px rgba(0,0,0,.2)}.log-card>div:first-child{display:flex;justify-content:space-between;gap:12px;align-items:center}.log-card b{color:var(--mint);font-size:15px}.log-card small{color:var(--muted)}.log-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.log-meta span,.log-target{border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:rgba(0,95,90,.16);color:var(--peach);font-size:12px}.log-card p{margin:12px 0 0;color:#fff;line-height:1.7;overflow-wrap:anywhere}@media(max-width:850px){.task-card.pro-task{grid-template-columns:1fr}.task-actions{min-width:0;flex-direction:row}.task-actions button{width:auto}.log-toolbar{grid-template-columns:1fr}.task-headline{flex-direction:column}.pro-meta{grid-template-columns:1fr!important}}
+.locked-delay{opacity:.85;border-style:dashed}.locked-delay small{display:block;margin-top:6px;color:#8a8f98;font-size:12px}textarea[readonly]{opacity:.65;cursor:not-allowed;background:rgba(255,255,255,.04)}
+
+/* === STRICT PROFESSIONAL HORIZONTAL TASK UI FIX === */
+.app{max-width:1680px;margin-right:270px;padding:28px 34px 40px;}
+.programs{grid-template-columns:1fr!important;gap:18px!important;}
+.program-card{padding:22px 24px!important;}
+.program-card .task-list,.task-list,.drawer-tasks{display:grid!important;grid-template-columns:1fr!important;gap:16px!important;}
+.task-card.pro-task{width:100%;grid-template-columns:minmax(0,1fr) 190px!important;gap:22px!important;align-items:start!important;padding:22px 24px!important;border-radius:26px!important;min-height:auto!important;}
+.task-headline{align-items:center!important;margin-bottom:2px;}
+.task-title-wrap b{font-size:19px!important;line-height:1.5!important;}
+.pro-meta{grid-template-columns:repeat(4,minmax(150px,1fr))!important;gap:10px!important;}
+.pro-meta span{min-height:58px!important;padding:11px 13px!important;}
+.task-actions{min-width:0!important;width:190px!important;display:flex!important;flex-direction:column!important;gap:10px!important;align-items:stretch!important;}
+.task-actions button{width:100%!important;min-height:44px!important;}
+.task-notes,.delay-note,.mytask-controls,.task-delivered{margin-top:4px!important;}
+.delay-note{padding:12px 14px;border-radius:16px;background:rgba(255,107,107,.10);border:1px solid rgba(255,107,107,.32);line-height:1.7;}
+.mytask-controls{display:grid;grid-template-columns:220px minmax(260px,1fr) 210px;gap:12px;align-items:end;padding:14px;border:1px solid rgba(183,226,168,.20);border-radius:18px;background:rgba(183,226,168,.055)}
+.mytask-controls label{margin:0;}
+.mytask-controls textarea{min-height:72px;width:100%;resize:vertical;}
+.mytask-controls .delay-save-btn{height:48px;margin:0!important;}
+.drawer .task-card.pro-task{grid-template-columns:1fr!important;}
+.drawer .task-actions{width:100%!important;flex-direction:row!important;flex-wrap:wrap!important;}
+
+/* Login panel in same card identity colors */
+.login-overlay{background:radial-gradient(circle at 20% 0%,rgba(15,50,45,.82),rgba(7,20,18,.94) 44%,rgba(3,8,7,.98) 100%)!important;}
+.login-panel{background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.025))!important;border:1px solid var(--line)!important;box-shadow:0 30px 90px rgba(0,0,0,.55),0 0 45px rgba(0,95,90,.16)!important;}
+.login-panel h2{color:var(--mint)!important;}
+.login-panel input{background:#081a18!important;border:1px solid var(--line)!important;color:var(--text)!important;}
+.login-panel button#loginBtn{background:linear-gradient(135deg,var(--mint),#78c893)!important;color:#06211d!important;}
+.ghost-login-btn{background:rgba(0,95,90,.20)!important;color:var(--text)!important;border:1px solid var(--line)!important;}
+.password-change-panel{display:grid;gap:10px;margin-top:8px;padding:14px;border-radius:20px;background:rgba(0,95,90,.12);border:1px solid var(--line);text-align:right;}
+.password-change-panel h3{margin:0;color:var(--peach);font-size:16px;}
+.password-panel-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.password-change-panel.hidden{display:none!important;}
+
+@media(max-width:1200px){
+  .pro-meta{grid-template-columns:repeat(2,minmax(150px,1fr))!important;}
+  .task-card.pro-task{grid-template-columns:1fr!important;}
+  .task-actions{width:100%!important;flex-direction:row!important;flex-wrap:wrap!important;}
+  .task-actions button{width:auto!important;flex:1 1 170px!important;}
+  .mytask-controls{grid-template-columns:1fr!important;}
+}
+@media(max-width:850px){
+  .app{margin-right:0!important;padding:18px!important;}
+  .pro-meta{grid-template-columns:1fr!important;}
+  .topbar,.section-head{align-items:stretch!important;}
+}

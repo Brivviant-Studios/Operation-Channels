@@ -117,7 +117,7 @@
         <label>الأولوية<select id="taskPriority"><option>عادي</option><option>مهم</option><option>عاجل</option></select></label>
       </div>
       <label>تفاصيل / ملاحظات<textarea id="taskNotes" rows="4"></textarea></label>
-      <label>سبب التأخير — يظهر فقط لو التاسك متأخر<textarea id="taskDelayReason" rows="3" placeholder="مثال: في انتظار خامات / تعديل سكريبت / مراجعة فويس أوفر"></textarea></label>
+      <label class="hidden">سبب التأخير<textarea id="taskDelayReason" rows="3"></textarea></label>
       <div class="dialog-actions"><button type="button" id="deleteTask" class="danger hidden">حذف</button><span></span><button type="button" id="cancelTask">إلغاء</button><button id="saveTask">حفظ</button></div>
     </form>
   </dialog>
@@ -173,6 +173,19 @@
     <button id="loginBtn" type="submit">Login</button>
     <button id="forgotPasswordBtn" type="button" class="ghost-login-btn">نسيت / تغيير كلمة المرور</button>
     <div id="loginError" class="login-error"></div>
+
+    <div id="passwordChangePanel" class="password-change-panel hidden">
+      <h3>تغيير كلمة المرور</h3>
+      <input id="changeUsername" type="text" placeholder="UserName">
+      <input id="changeCurrentPassword" type="password" placeholder="كلمة المرور الحالية">
+      <input id="changeNewPassword" type="password" placeholder="كلمة المرور الجديدة">
+      <input id="changeConfirmPassword" type="password" placeholder="تأكيد كلمة المرور الجديدة">
+      <div class="password-panel-actions">
+        <button id="savePasswordChangeBtn" type="button">حفظ كلمة المرور</button>
+        <button id="cancelPasswordChangeBtn" type="button" class="ghost-login-btn">إلغاء</button>
+      </div>
+      <div id="passwordChangeError" class="login-error"></div>
+    </div>
   </form>
 </div>
 
