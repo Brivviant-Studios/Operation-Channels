@@ -18,6 +18,7 @@
       <button class="nav-btn" data-tab="flowchart">Flow Chart</button>
       <button class="nav-btn" data-tab="uploads">المرفوعات</button>
       <button class="nav-btn" data-tab="team">الفريق</button>
+      <button class="nav-btn" data-tab="logs" id="logsNav">Log</button>
       <button class="nav-btn" data-tab="mytasks" id="myTasksNav">My Tasks</button>
     </nav>
     <div class="mini-stats">
@@ -74,6 +75,18 @@
       <div class="section-head"><h2>إدارة الفريق</h2><button id="addPersonBtn">+ إضافة شخص</button></div>
       <div class="team-note">أي اسم تضيفه هنا سيظهر تلقائيًا في اختيار المسؤول داخل التاسكات والمرفوعات.</div>
       <div class="team-grid" id="teamGrid"></div>
+    </section>
+
+    <section id="logs" class="tab">
+      <div class="section-head">
+        <h2>Activity Log</h2>
+        <span class="muted">كل العمليات محفوظة بالتاريخ والساعة</span>
+      </div>
+      <div class="log-toolbar">
+        <input id="logSearch" placeholder="بحث في اللوج..." />
+        <select id="logTypeFilter"><option value="">كل العمليات</option></select>
+      </div>
+      <div id="logsList" class="logs-list"></div>
     </section>
   </main>
 

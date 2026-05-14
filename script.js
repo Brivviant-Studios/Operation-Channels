@@ -6,12 +6,14 @@ let state = JSON.parse(localStorage.getItem(KEY)||'null') || {
   people: SEED_DATA.people,
   statuses: SEED_DATA.statuses,
   tasks: [],
-  uploads: []
+  uploads: [],
+  logs: []
 };
 state.people = state.people || SEED_DATA.people || [];
 state.statuses = state.statuses || SEED_DATA.statuses || [];
 state.tasks = state.tasks || [];
 state.uploads = state.uploads || [];
+state.logs = state.logs || [];
 state.users = Array.isArray(state.users) ? state.users : [];
 const DEFAULT_ADMIN = { name:'Brivviant', username:'Brivviant', password:'Brivviant@123456', role:'admin', isActive:true };
 const roleLabel=r=>(r==='admin'?'Admin':'Staff');
@@ -37,6 +39,46 @@ function clearSession(){ localStorage.removeItem(AUTH_KEY); }
 function currentSession(){ return getSession(); }
 function currentUser(){ const ss=currentSession(); return ss ? normalizeUsers(state.users).find(u=>u.username===ss.username) || ss : null; }
 function isAdmin(){ return (currentUser()?.role || currentSession()?.role) === 'admin'; }
+function nowIso(){ return new Date().toISOString(); }
+function nowText(){ return new Date().toLocaleString('ar-EG', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+function getActorSnapshot(fallback={}){
+  const me=currentUser() || currentSession() || fallback || {};
+  return {
+    actorName: me.name || fallback.name || fallback.username || 'Unknown',
+    actorUsername: me.username || fallback.username || '',
+    actorRole: me.role || fallback.role || 'unknown'
+  };
+}
+async function logAction(action, details='', target='', fallbackActor={}){
+  try{
+    state.logs = Array.isArray(state.logs) ? state.logs : [];
+    const actor=getActorSnapshot(fallbackActor);
+    const item={
+      id: (crypto.randomUUID?.() || String(Date.now()+Math.random())),
+      action,
+      details: String(details||''),
+      target: String(target||''),
+      actorName: actor.actorName,
+      actorUsername: actor.actorUsername,
+      actorRole: actor.actorRole,
+      createdAt: nowIso(),
+      createdAtText: nowText()
+    };
+    state.logs=[item, ...state.logs].slice(0,1000);
+    localSave();
+    renderLogs?.();
+    if(hasGithubConfig()){
+      apiPost('activity_logs', uiLogToDb(item), 'return=minimal').catch(()=>{});
+    }
+    return item;
+  }catch(e){ console.warn('logAction failed', e); }
+}
+function dbLogToUi(l){
+  return {id:l.id, action:l.action||'', details:l.details||'', target:l.target||'', actorName:l.actor_name||'', actorUsername:l.actor_username||'', actorRole:l.actor_role||'', createdAt:l.created_at||'', createdAtText:l.created_at?new Date(l.created_at).toLocaleString('ar-EG',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}):''};
+}
+function uiLogToDb(l){
+  return {id:l.id, action:l.action||'', details:l.details||'', target:l.target||'', actor_name:l.actorName||'', actor_username:l.actorUsername||'', actor_role:l.actorRole||'', created_at:l.createdAt||new Date().toISOString()};
+}
 async function hashPassword(password){ return String(password||''); }
 async function ensureDefaultAdmin(){
   state.users = Array.isArray(state.users) ? state.users : [];
@@ -125,12 +167,15 @@ async function loadOnline(){
     const statuses=await apiGet('statuses','?select=*&order=sort_order.asc');
     const tasks=await apiGet('tasks','?select=*&order=due.asc');
     const uploads=await apiGet('uploads','?select=*&order=created_at.desc');
+    let logs=[];
+    try{ logs=await apiGet('activity_logs','?select=*&order=created_at.desc&limit=500'); }catch(logErr){ console.warn('activity_logs table not ready', logErr); }
     state.channels=channels.map(c=>({id:c.id,name:c.name,programs:programs.filter(p=>p.channel_id===c.id).map(p=>p.name)}));
     state.users=normalizeUsers(people.map(p=>({id:p.id,name:p.name,username:p.username||p.name,password:p.password||p.password_plain||p.password_hash||'',nickname:p.nickname||p.name,email:p.email||'',role:p.role||'standard',isActive:p.is_active,createdAt:p.created_at})));
     state.people=people.map(p=>p.name);
     state.statuses=statuses.map(s=>s.name);
     state.tasks=tasks.map(dbTaskToUi);
     state.uploads=uploads.map(dbUploadToUi);
+    state.logs=logs.map(dbLogToUi);
     localSave();
     setSync('Loaded From Supabase Tables');
     renderAll();
@@ -197,7 +242,7 @@ async function save(){ localSave(); renderAll(); await saveOnline(); }
 
 function normalizeState(s){
   s=s||{};
-  const out = {channels:Array.isArray(s.channels)?s.channels:SEED_DATA.channels,people:Array.isArray(s.people)?s.people:SEED_DATA.people,statuses:Array.isArray(s.statuses)?s.statuses:SEED_DATA.statuses,tasks:Array.isArray(s.tasks)?s.tasks:[],uploads:Array.isArray(s.uploads)?s.uploads:[],users:normalizeUsers(s.users)};
+  const out = {channels:Array.isArray(s.channels)?s.channels:SEED_DATA.channels,people:Array.isArray(s.people)?s.people:SEED_DATA.people,statuses:Array.isArray(s.statuses)?s.statuses:SEED_DATA.statuses,tasks:Array.isArray(s.tasks)?s.tasks:[],uploads:Array.isArray(s.uploads)?s.uploads:[],logs:Array.isArray(s.logs)?s.logs:[],users:normalizeUsers(s.users)};
   out.people=out.people.map(personName).filter(Boolean);
   return out;
 }
@@ -254,20 +299,38 @@ function openChannel(chName){
 function showProgramTasks(ch,pr){let box=$(`#tasks-${slug(ch+pr)}`); if(!box)return; let tasks=activeTasks().filter(t=>t.channel===ch&&t.program===pr).sort((a,b)=>(a.due||'').localeCompare(b.due||''));box.innerHTML=tasks.length?tasks.map(taskHtml).join(''):'<p class="muted">لا توجد تاسكات بعد.</p>'}
 function taskHtml(t){
   const done=isDone(t), late=isLate(t), dueNow=isDueToday(t);
-  const delivered=t.deliveredAt?`<small class="delivered-note">✓ تم رفع التسليم بواسطة ${safe(t.deliveredBy||t.owner)} — ${safe(new Date(t.deliveredAt).toLocaleString('ar-EG'))}</small>`:'';
-  const delay=late?`<small class="delay-note">سبب التأخير الحالي: ${safe(t.delayReason||'لم يتم كتابة سبب التأخير بعد')}</small><div class="delay-editor"><label>اكتب / عدّل سبب التأخير<textarea data-delay-for="${safeAttr(t.id)}" placeholder="اكتب سبب التأخير هنا بوضوح...">${safe(t.delayReason||'')}</textarea></label><button class="delay-save-btn" data-action="save-delay" data-id="${safeAttr(t.id)}">حفظ سبب التأخير</button></div>`:'';
+  const dueLabel=t.due ? new Date(t.due+'T00:00:00').toLocaleDateString('ar-EG') : '-';
+  const delivered=t.deliveredAt?`<div class="task-delivered">✓ تم رفع التسليم بواسطة ${safe(t.deliveredBy||t.owner)} — ${safe(new Date(t.deliveredAt).toLocaleString('ar-EG',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}))}</div>`:'';
+  const delay=late?`<div class="delay-note">سبب التأخير الحالي: ${safe(t.delayReason||'لم يتم كتابة سبب التأخير بعد')}</div><div class="delay-editor"><label>اكتب / عدّل سبب التأخير<textarea data-delay-for="${safeAttr(t.id)}" placeholder="اكتب سبب التأخير هنا بوضوح...">${safe(t.delayReason||'')}</textarea></label><button class="delay-save-btn" data-action="save-delay" data-id="${safeAttr(t.id)}">حفظ سبب التأخير</button></div>`:'';
   const flags=`${late?'<span class="status late-flag">متأخر</span>':''}${dueNow?'<span class="status today-flag">تسليم اليوم</span>':''}${isArchived(t)?'<span class="status archived-flag">محفوظ في الكالندر</span>':''}`;
   const hideBtn = isArchived(t) ? '' : `<button class="archive-btn" data-action="archive-task" data-id="${safeAttr(t.id)}">إخفاء من التاسكات</button>`;
-  return `<div class="task-card ${done?'done-task':''} ${late?'late-task':''} ${dueNow?'today-task':''} ${isArchived(t)?'archived-task':''}"><div><b>${done?'✓ ':''}${safe(t.title)}</b><div class="task-meta"><span>${safe(t.owner)}</span><span>${safe(t.channel)}</span><span>${safe(t.program)}</span><span>حلقة: ${safe(t.episodeNumber||'-')} ${safe(t.episodeName||'')}</span><span>تسليم: ${safe(t.due||'-')}</span><span>${safe(t.priority)}</span><span class="status s-${safe(t.status)}">${safe(t.status)}</span>${flags}</div>${t.notes?`<small>${safe(t.notes)}</small>`:''}${delay}${delivered}</div><div class="task-actions"><button data-action="edit-task" data-id="${safeAttr(t.id)}">تعديل</button><button class="done-btn" data-action="mark-done" data-id="${safeAttr(t.id)}">${done?'تم التسليم ✓':'علّم كمنتهي ✓'}</button>${hideBtn}</div></div>`
+  return `<div class="task-card pro-task ${done?'done-task':''} ${late?'late-task':''} ${dueNow?'today-task':''} ${isArchived(t)?'archived-task':''}">
+    <div class="task-main">
+      <div class="task-headline">
+        <div class="task-title-wrap"><b>${done?'✓ ':''}${safe(t.title)}</b><small>${safe(t.channel)} / ${safe(t.program)}</small></div>
+        <span class="status s-${safe(t.status)}">${safe(t.status)}</span>
+      </div>
+      <div class="task-meta pro-meta">
+        <span><em>Owner</em>${safe(t.owner||'-')}</span>
+        <span><em>Episode</em>${safe(t.episodeNumber||'-')} ${safe(t.episodeName||'')}</span>
+        <span><em>Due</em>${safe(dueLabel)}</span>
+        <span><em>Priority</em>${safe(t.priority||'-')}</span>
+        ${flags}
+      </div>
+      ${t.notes?`<div class="task-notes">${safe(t.notes)}</div>`:''}${delay}${delivered}
+    </div>
+    <div class="task-actions"><button data-action="edit-task" data-id="${safeAttr(t.id)}">تعديل</button><button class="done-btn" data-action="mark-done" data-id="${safeAttr(t.id)}">${done?'تم التسليم ✓':'علّم كمنتهي ✓'}</button>${hideBtn}</div>
+  </div>`
 }
-async function markTaskDone(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; t.status='تم التسليم'; t.deliveredAt=t.deliveredAt||new Date().toISOString(); t.deliveredBy=t.deliveredBy||t.owner; t.updatedAt=new Date().toISOString(); await save(); }
-async function archiveTaskFromLists(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; if(!confirm('إخفاء التاسك من قوائم التاسكات؟ سيظل محفوظًا وظاهرًا داخل الكالندر.')) return; t.archivedFromTasks=true; t.archivedAt=new Date().toISOString(); t.updatedAt=new Date().toISOString(); await save(); }
-async function deleteTaskFromCalendar(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; if(!confirm('حذف نهائي من الكالندر والبيانات؟ لا يمكن الرجوع إلا من نسخة JSON احتياطية.')) return; state.tasks=state.tasks.filter(x=>x.id!==id); state.uploads=(state.uploads||[]).map(u=>u.taskId===id?{...u, taskId:'', taskTitle:(u.taskTitle||'')+' — التاسك محذوف من الكالندر'}:u); await save(); }
-async function saveDelayReasonFromCard(btn,id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; const card=btn.closest('.task-card'); const textarea=card?.querySelector(`textarea[data-delay-for="${id}"]`); t.delayReason=(textarea?.value||'').trim(); if(isLate(t)) t.status='متأخر'; t.updatedAt=new Date().toISOString(); await save(); }
+
+async function markTaskDone(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; const oldStatus=t.status; t.status='تم التسليم'; t.deliveredAt=t.deliveredAt||new Date().toISOString(); t.deliveredBy=t.deliveredBy||currentUser()?.name||t.owner; t.updatedAt=new Date().toISOString(); await logAction('TASK_DONE', `تغيير الحالة من ${oldStatus} إلى تم التسليم`, t.title); await save(); }
+async function archiveTaskFromLists(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; if(!confirm('إخفاء التاسك من قوائم التاسكات؟ سيظل محفوظًا وظاهرًا داخل الكالندر.')) return; t.archivedFromTasks=true; t.archivedAt=new Date().toISOString(); t.updatedAt=new Date().toISOString(); await logAction('TASK_ARCHIVE', 'إخفاء التاسك من قوائم التاسكات مع بقائه في الكالندر', t.title); await save(); }
+async function deleteTaskFromCalendar(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; if(!confirm('حذف نهائي من الكالندر والبيانات؟ لا يمكن الرجوع إلا من نسخة JSON احتياطية.')) return; await logAction('TASK_DELETE', 'حذف نهائي من الكالندر والبيانات', t.title); state.tasks=state.tasks.filter(x=>x.id!==id); state.uploads=(state.uploads||[]).map(u=>u.taskId===id?{...u, taskId:'', taskTitle:(u.taskTitle||'')+' — التاسك محذوف من الكالندر'}:u); await save(); }
+async function saveDelayReasonFromCard(btn,id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; const card=btn.closest('.task-card'); const textarea=card?.querySelector(`textarea[data-delay-for="${id}"]`); const old=t.delayReason||''; t.delayReason=(textarea?.value||'').trim(); if(isLate(t)) t.status='متأخر'; t.updatedAt=new Date().toISOString(); await logAction('TASK_DELAY_REASON', `تعديل سبب التأخير من: ${old || '-'} إلى: ${t.delayReason || '-'}`, t.title); await save(); }
 function openTaskDialog(ch,pr){fillSelects();$('#taskForm').reset();$('#taskId').value='';$('#taskChannel').value=ch;$('#taskProgram').value=pr;$('#deleteTask').classList.add('hidden');$('#deleteTask').textContent='إخفاء من التاسكات';$('#dialogTitle').textContent=`إضافة تاسك — ${pr}`;$('#taskDue').value=today();$('#taskDialog').showModal()}
 function editTask(id){let t=state.tasks.find(x=>x.id===id); if(!t)return; fillSelects();$('#taskId').value=t.id;$('#taskChannel').value=t.channel;$('#taskProgram').value=t.program;$('#taskEpisodeName').value=t.episodeName||'';$('#taskEpisodeNumber').value=t.episodeNumber||'';$('#taskTitle').value=t.title;$('#taskOwner').value=t.owner;$('#taskStatus').value=t.status;$('#taskDue').value=t.due;$('#taskPriority').value=t.priority;$('#taskNotes').value=t.notes||'';$('#taskDelayReason').value=t.delayReason||'';$('#deleteTask').classList.remove('hidden');$('#deleteTask').textContent=isArchived(t)?'مخفي من التاسكات':'إخفاء من التاسكات';$('#deleteTask').disabled=isArchived(t);$('#dialogTitle').textContent='تعديل تاسك';$('#taskDialog').showModal()}
-async function saveTaskForm(e){e.preventDefault(); if(!isAdmin()) return alert('إنشاء أو تعديل التاسكات متاح للأدمن فقط.'); let id=$('#taskId').value||crypto.randomUUID();let old=state.tasks.find(x=>x.id===id)||{};let t={...old,id,channel:$('#taskChannel').value,program:$('#taskProgram').value,episodeName:$('#taskEpisodeName').value,episodeNumber:$('#taskEpisodeNumber').value,title:$('#taskTitle').value,owner:$('#taskOwner').value,status:$('#taskStatus').value,due:$('#taskDue').value,priority:$('#taskPriority').value,notes:$('#taskNotes').value,delayReason:$('#taskDelayReason').value,updatedAt:new Date().toISOString()};state.tasks=state.tasks.filter(x=>x.id!==id).concat(t);$('#taskDialog').close();await save()}
-async function archiveFromDialog(){ if(!isAdmin()) return alert('حذف التاسكات متاح للأدمن فقط.'); let id=$('#taskId').value;let t=state.tasks.find(x=>x.id===id);if(t){t.archivedFromTasks=true;t.archivedAt=new Date().toISOString();t.updatedAt=new Date().toISOString();}$('#taskDialog').close();await save()}
+async function saveTaskForm(e){e.preventDefault(); if(!isAdmin()) return alert('إنشاء أو تعديل التاسكات متاح للأدمن فقط.'); let id=$('#taskId').value||crypto.randomUUID();let old=state.tasks.find(x=>x.id===id)||{}; const isNew=!old.id; let t={...old,id,channel:$('#taskChannel').value,program:$('#taskProgram').value,episodeName:$('#taskEpisodeName').value,episodeNumber:$('#taskEpisodeNumber').value,title:$('#taskTitle').value,owner:$('#taskOwner').value,status:$('#taskStatus').value,due:$('#taskDue').value,priority:$('#taskPriority').value,notes:$('#taskNotes').value,delayReason:$('#taskDelayReason').value,updatedAt:new Date().toISOString(),createdAt:old.createdAt||new Date().toISOString()};state.tasks=state.tasks.filter(x=>x.id!==id).concat(t); await logAction(isNew?'TASK_CREATE':'TASK_UPDATE', `${isNew?'إنشاء':'تعديل'} تاسك — المسؤول: ${t.owner} — التسليم: ${t.due} — الحالة: ${t.status}`, t.title); $('#taskDialog').close();await save()}
+async function archiveFromDialog(){ if(!isAdmin()) return alert('حذف التاسكات متاح للأدمن فقط.'); let id=$('#taskId').value;let t=state.tasks.find(x=>x.id===id);if(t){t.archivedFromTasks=true;t.archivedAt=new Date().toISOString();t.updatedAt=new Date().toISOString(); await logAction('TASK_ARCHIVE','إخفاء من نافذة تعديل التاسك', t.title);}$('#taskDialog').close();await save()}
 function renderDaily(){let date=$('#dailyDate')?.value;let arr=activeTasks().filter(t=>t.due===date).sort((a,b)=>a.owner.localeCompare(b.owner));$('#dailyList').innerHTML=arr.length?arr.map(taskHtml).join(''):'<div class="panel">لا توجد تسليمات في هذا اليوم.</div>'}
 function renderCalendar(){ const wrap=$('#calendarGrid'); if(!wrap)return; const val=$('#calendarMonth').value||monthNow(); const [y,m]=val.split('-').map(Number); const first=new Date(y,m-1,1); const last=new Date(y,m,0); const startDay=(first.getDay()+6)%7; let html=''; for(let i=0;i<startDay;i++) html+='<div class="calendar-day empty"></div>'; for(let d=1; d<=last.getDate(); d++){ const date=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; const arr=state.tasks.filter(t=>t.due===date); html+=`<div class="calendar-day"><div class="day-number">${d}</div>${arr.map(t=>`<span class="mini-task ${isArchived(t)?'mini-archived':''}"><span data-action="edit-task" data-id="${safeAttr(t.id)}"><strong>${safe(t.title)}</strong>${safe(t.owner)} • ح${safe(t.episodeNumber||'-')} ${isArchived(t)?'• محفوظ بالكالندر':''}</span><button class="calendar-delete-btn" data-action="delete-calendar" data-id="${safeAttr(t.id)}" title="حذف نهائي من الكالندر">×</button></span>`).join('')}</div>`; } wrap.innerHTML=html; }
 function renderFlow(){ const box=$('#flowChart'); if(!box)return; const filter=$('#flowFilter').value; let channels=state.channels.filter(c=>!filter||c.name===filter); box.innerHTML=channels.map(ch=>`<div class="flow-channel"><h2>${safe(ch.name)}</h2><div class="flow-programs">${ch.programs.map(pr=>{const tasks=activeTasks().filter(t=>t.channel===ch.name&&t.program===pr); const episodes={}; tasks.forEach(t=>{const key=(t.episodeNumber||'-')+' — '+(t.episodeName||'بدون اسم حلقة'); episodes[key]??=[]; episodes[key].push(t);}); return `<div class="flow-program"><h3>${safe(pr)}</h3>${Object.keys(episodes).length?Object.keys(episodes).map(ep=>`<div class="flow-episode"><b>${safe(ep)}</b>${episodes[ep].map(t=>`<div class="flow-task">${safe(t.title)} → ${safe(t.owner)} • ${safe(t.status)}</div>`).join('')}</div>`).join(''):'<p class="muted">لا توجد حلقات/تاسكات بعد.</p>'}</div>`}).join('')}</div></div>`).join('') || '<div class="panel">لا توجد بيانات.</div>'; }
@@ -313,8 +376,8 @@ async function saveAccountForm(e){
   const dup=normalizeUsers(state.users).some(u=>(u.username===username || u.name===name) && u.name!==oldName);
   if(dup) return alert('الاسم أو UserName مستخدم بالفعل.');
   let user=oldName ? getUserByName(oldName) : null;
-  if(user){ Object.assign(user,{name,username,password,nickname,email,role,isActive:true}); }
-  else state.users.push({id:crypto.randomUUID(),name,username,password,nickname,email,role,isActive:true,createdAt:new Date().toISOString()});
+  if(user){ Object.assign(user,{name,username,password,nickname,email,role,isActive:true}); await logAction('ACCOUNT_UPDATE', `تعديل حساب ${name} — Username: ${username} — Role: ${roleLabel(role)}`, name); }
+  else { await logAction('ACCOUNT_CREATE', `إنشاء حساب ${name} — Username: ${username} — Role: ${roleLabel(role)}`, name); state.users.push({id:crypto.randomUUID(),name,username,password,nickname,email,role,isActive:true,createdAt:new Date().toISOString()}); }
   if(oldName && oldName!==name){
     state.people=getPeopleNames().map(p=>p===oldName?name:p);
     state.tasks.forEach(t=>{ if(t.owner===oldName) t.owner=name; if(t.deliveredBy===oldName) t.deliveredBy=name; });
@@ -333,10 +396,26 @@ async function removePerson(name){
   if(!assigned && !confirm(`حذف / إيقاف ${name} من الفريق؟`)) return;
   state.people=getPeopleNames().filter(p=>p!==name);
   state.users=(state.users||[]).map(u=>u.name===name?{...u,isActive:false}:u);
+  await logAction('ACCOUNT_DISABLE', `إيقاف / حذف عضو من الفريق: ${name}`, name);
   await save();
 }
 function renderStats(){let t=activeTasks();$('#statTasks').textContent=t.length;$('#statDone').textContent=t.filter(isDone).length;$('#statLate').textContent=t.filter(isLate).length}
 function renderUploads(){ const list=$('#uploadsList'); if(!list)return; list.innerHTML=(state.uploads||[]).map(u=>`<div class="upload-card"><h3>${safe(u.name)}</h3><div class="upload-meta"><span>${safe(u.channel)}</span><span>${safe(u.program)}</span><span>حلقة: ${safe(u.episode||'-')}</span><span>رفع: ${safe(u.by)}</span><span>${safe(u.createdAtText||'')}</span>${u.taskTitle?`<span>تاسك: ${safe(u.taskTitle)}</span>`:''}</div>${u.link?`<p><a href="${safeAttr(u.link)}" target="_blank">فتح الرابط</a></p>`:''}${u.githubPath?`<p class="muted">GitHub: ${safe(u.githubPath)}</p>`:''}${u.notes?`<small>${safe(u.notes)}</small>`:''}</div>`).join('') || '<div class="panel">لا توجد مرفوعات بعد.</div>'; }
+function renderLogs(){
+  const box=$('#logsList'); if(!box) return;
+  const typeSel=$('#logTypeFilter');
+  const logs=Array.isArray(state.logs)?state.logs:[];
+  if(typeSel){
+    const current=typeSel.value;
+    const types=[...new Set(logs.map(l=>l.action).filter(Boolean))].sort();
+    typeSel.innerHTML='<option value="">كل العمليات</option>'+types.map(t=>`<option value="${safeAttr(t)}">${safe(t)}</option>`).join('');
+    typeSel.value=current;
+  }
+  const q=($('#logSearch')?.value||'').trim().toLowerCase();
+  const type=($('#logTypeFilter')?.value||'');
+  const arr=logs.filter(l=>(!type||l.action===type)&&(!q||JSON.stringify(l).toLowerCase().includes(q))).slice(0,500);
+  box.innerHTML=arr.length?arr.map(l=>`<div class="log-card"><div><b>${safe(l.action)}</b><small>${safe(l.createdAtText || (l.createdAt?new Date(l.createdAt).toLocaleString('ar-EG'):''))}</small></div><div class="log-meta"><span>Account: ${safe(l.actorName||'-')}</span><span>@${safe(l.actorUsername||'-')}</span><span>${safe(roleLabel(l.actorRole))}</span></div><p>${safe(l.details||'')}</p>${l.target?`<small class="log-target">Target: ${safe(l.target)}</small>`:''}</div>`).join(''):'<div class="panel">لا توجد عمليات مسجلة بعد.</div>';
+}
 function renderMyTasks(){
   const box=$('#myTasksList'); if(!box)return;
   const me=currentUser();
@@ -356,17 +435,18 @@ async function saveUploadForm(e){
   const item={id:crypto.randomUUID(),name:$('#uploadName').value,channel:$('#uploadChannel').value,program:$('#uploadProgram').value,episode:$('#uploadEpisode').value,by:byName,taskId:linkedTaskId,taskTitle:linkedTask?.title||'',link:$('#uploadLink').value || github?.url || '',githubPath:github?.path || '',notes:$('#uploadNotes').value,createdAt:new Date().toISOString(),createdAtText:new Date().toLocaleString('ar-EG')};
   state.uploads=[item,...(state.uploads||[])];
   if(linkedTask){ linkedTask.status='تم التسليم'; linkedTask.deliveredAt=item.createdAt; linkedTask.deliveredBy=item.by; linkedTask.deliveredUploadId=item.id; linkedTask.updatedAt=item.createdAt; linkedTask.delayReason=''; }
+  await logAction('UPLOAD_CREATE', `رفع ملف/رابط بواسطة ${item.by}${linkedTask?` وربطه بتاسك: ${linkedTask.title}`:''}`, item.name);
   $('#uploadDialog').close(); await save();
 }
-function renderAll(){state=normalizeState(state);syncPeopleFromUsers();renderChannels();fillSelects();renderDaily();renderCalendar();renderFlow();renderDrawer();renderTeam();renderStats();renderUploads();renderDeliveryAlerts();renderMyTasks();applyRolePermissions();}
+function renderAll(){state=normalizeState(state);syncPeopleFromUsers();renderChannels();fillSelects();renderDaily();renderCalendar();renderFlow();renderDrawer();renderTeam();renderStats();renderUploads();renderDeliveryAlerts();renderMyTasks();renderLogs();applyRolePermissions();}
 function bindEvents(){
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>{$$('.nav-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');$$('.tab').forEach(t=>t.classList.remove('active'));$('#'+b.dataset.tab).classList.add('active');$('#pageTitle').textContent=b.textContent;renderAll()}));
   $('#indexBtn')?.addEventListener('click',()=>$('#drawer').classList.add('open'));
   $('#closeDrawer')?.addEventListener('click',()=>$('#drawer').classList.remove('open'));
-  ['filterPerson','filterStatus','searchInput','dailyDate','calendarMonth','flowFilter'].forEach(id=>$('#'+id)?.addEventListener('input',renderAll));
+  ['filterPerson','filterStatus','searchInput','dailyDate','calendarMonth','flowFilter','logSearch','logTypeFilter'].forEach(id=>$('#'+id)?.addEventListener('input',renderAll));
   $('#todayBtn')?.addEventListener('click',()=>{$('#calendarMonth').value=monthNow();renderCalendar()});
-  $('#exportBtn')?.addEventListener('click',()=>{ if(!isAdmin()) return alert('Export متاح للأدمن فقط.'); let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.download='brivviant-platform-data.json';a.click()});
-  $('#importInput')?.addEventListener('change',e=>{ if(!isAdmin()) return alert('Import متاح للأدمن فقط.'); let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=async()=>{state=normalizeState(JSON.parse(r.result));await ensureDefaultAdmin();await save()};r.readAsText(f)});
+  $('#exportBtn')?.addEventListener('click',()=>{ if(!isAdmin()) return alert('Export متاح للأدمن فقط.'); logAction('EXPORT_JSON','تصدير نسخة JSON من بيانات النظام','JSON Export'); let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.download='brivviant-platform-data.json';a.click()});
+  $('#importInput')?.addEventListener('change',e=>{ if(!isAdmin()) return alert('Import متاح للأدمن فقط.'); let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=async()=>{state=normalizeState(JSON.parse(r.result));await ensureDefaultAdmin();await logAction('IMPORT_JSON','استيراد بيانات JSON إلى النظام','JSON Import');await save()};r.readAsText(f)});
   $('#saveTask')?.addEventListener('click',saveTaskForm);
   $('#deleteTask')?.addEventListener('click',archiveFromDialog);
   $('#cancelTask')?.addEventListener('click',()=>$('#taskDialog').close());
@@ -407,7 +487,7 @@ function applyRolePermissions(){
   document.body.classList.toggle('is-standard', !admin);
 
   // ADMIN ONLY NAVIGATION — Staff must not see Team or Calendar at all.
-  const adminOnlyTabs = ['team','calendar'];
+  const adminOnlyTabs = ['team','calendar','logs'];
   adminOnlyTabs.forEach(tabName=>{
     document.querySelector(`.nav-btn[data-tab="${tabName}"]`)?.classList.toggle('restricted', !admin);
     document.querySelector(`#${tabName}`)?.classList.toggle('restricted', !admin);
@@ -438,18 +518,20 @@ async function login(){
   const err=$('#loginError'); if(err) err.textContent='';
   const username=($('#loginUsername')?.value||'').trim();
   const password=$('#loginPassword')?.value||'';
-  if(!username || !password){ if(err) err.textContent='لازم تدخل UserName و Password.'; return; }
+  if(!username || !password){ if(err) err.textContent='لازم تدخل UserName و Password.'; await logAction('LOGIN_MISSING','محاولة دخول بدون UserName أو Password','Login',{username:username||'Unknown',name:username||'Unknown',role:'unknown'}); return; }
   const user=normalizeUsers(state.users).find(u=>u.username===username && u.isActive!==false);
   if(!user || String(user.password||'') !== String(password)){
     if(err) err.textContent='UserName أو Password غلط. اكتب البيانات صح.';
+    await logAction('LOGIN_FAILED', `فشل تسجيل الدخول للـ UserName: ${username}`, 'Login', {username, name:username, role:'unknown'});
     return;
   }
   setSession({username:user.username,name:user.name,role:user.role});
+  await logAction('LOGIN_SUCCESS', `تسجيل دخول ناجح للحساب ${user.name}`, 'Login', user);
   $('#loginOverlay').style.display='none';
   updateProfileBox();
   applyRolePermissions(); renderAll();
 }
-function logout(){ clearSession(); $('#loginUsername').value=''; $('#loginPassword').value=''; $('#loginOverlay').style.display='flex'; updateProfileBox(); }
+async function logout(){ const me=currentUser(); await logAction('LOGOUT', `تسجيل خروج للحساب ${me?.name||''}`, 'Logout', me||{}); clearSession(); $('#loginUsername').value=''; $('#loginPassword').value=''; $('#loginOverlay').style.display='flex'; updateProfileBox(); }
 function updateProfileBox(){
   const box=$('#profileBox'); if(!box) return;
   const me=currentUser();
@@ -466,6 +548,7 @@ async function showForgotPassword(){
   const next=prompt('كلمة المرور الجديدة:'); if(!next) return alert('لازم تدخل كلمة مرور جديدة.');
   const confirmPass=prompt('أعد كتابة كلمة المرور الجديدة:'); if(next!==confirmPass) return alert('كلمتا المرور غير متطابقتين.');
   user.password=next; delete user.passwordHash; delete user.password_hash;
+  await logAction('PASSWORD_CHANGE', `تغيير كلمة مرور الحساب ${user.name}`, user.name, user);
   await save();
   alert('تم تغيير كلمة المرور. سجل الدخول بالكلمة الجديدة.');
 }
