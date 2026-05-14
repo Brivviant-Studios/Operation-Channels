@@ -405,10 +405,28 @@ function applyRolePermissions(){
   const admin=isAdmin();
   document.body.classList.toggle('is-admin', admin);
   document.body.classList.toggle('is-standard', !admin);
+
+  // ADMIN ONLY NAVIGATION — Staff must not see Team or Calendar at all.
+  const adminOnlyTabs = ['team','calendar'];
+  adminOnlyTabs.forEach(tabName=>{
+    document.querySelector(`.nav-btn[data-tab="${tabName}"]`)?.classList.toggle('restricted', !admin);
+    document.querySelector(`#${tabName}`)?.classList.toggle('restricted', !admin);
+  });
+
+  // If a Staff user somehow lands on an admin-only tab, move him back to My Tasks safely.
+  const activeBtn = document.querySelector('.nav-btn.active');
+  if(!admin && activeBtn && adminOnlyTabs.includes(activeBtn.dataset.tab)){
+    activeBtn.classList.remove('active');
+    const myBtn = document.querySelector('.nav-btn[data-tab="mytasks"]');
+    myBtn?.classList.add('active');
+    $$('.tab').forEach(t=>t.classList.remove('active'));
+    $('#mytasks')?.classList.add('active');
+    if($('#pageTitle')) $('#pageTitle').textContent = myBtn?.textContent || 'My Tasks';
+  }
+
   $$('[data-action="open-task-dialog"], #addPersonBtn, [data-action="rename-person"], [data-action="remove-person"], [data-action="archive-task"], .calendar-delete-btn').forEach(el=>{ el.classList.toggle('restricted', !admin); });
   $$('[data-action="edit-task"]').forEach(el=>{ el.classList.toggle('restricted', !admin); });
   const me=currentUser();
-  const adminTools=$('#exportBtn')?.parentElement;
   $('#exportBtn')?.classList.toggle('restricted', !admin);
   document.querySelector('.importLabel')?.classList.toggle('restricted', !admin);
   updateProfileBox();
