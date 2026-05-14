@@ -50,3 +50,4 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .login-panel button{padding:14px;border:none;border-radius:14px;cursor:pointer;font-weight:700}
 .login-error{min-height:20px;color:#ff8e8e;font-size:13px}
 .restricted{display:none !important}
+.ghost-login-btn{background:rgba(255,255,255,.08)!important;color:#fff!important;border:1px solid rgba(255,255,255,.12)!important}

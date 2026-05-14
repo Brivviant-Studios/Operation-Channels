@@ -18,6 +18,7 @@
       <button class="nav-btn" data-tab="flowchart">Flow Chart</button>
       <button class="nav-btn" data-tab="uploads">المرفوعات</button>
       <button class="nav-btn" data-tab="team">الفريق</button>
+      <button class="nav-btn" data-tab="mytasks" id="myTasksNav">My Tasks</button>
     </nav>
     <div class="mini-stats">
       <div><span id="statTasks">0</span><small>Tasks</small></div>
@@ -60,6 +61,11 @@
     <section id="uploads" class="tab">
       <div class="section-head"><h2>المرفوعات</h2><button id="openUploadDialog">+ إضافة مرفوع</button></div>
       <div id="uploadsList" class="upload-grid"></div>
+    </section>
+
+    <section id="mytasks" class="tab">
+      <div class="section-head"><h2>My Tasks</h2><span class="muted">التاسكات المحددة للحساب الحالي فقط</span></div>
+      <div id="myTasksList" class="task-list"></div>
     </section>
 
     <section id="team" class="tab">
@@ -122,10 +128,6 @@
     </form>
   </dialog>
 
-  <script src="config.js"></script>
-  <script src="data.js"></script>
-  <script src="script.js"></script>
-
 <div id="loginOverlay" class="login-overlay">
   <div class="login-panel">
     <img src="assets/brivviant-logo.png" class="login-logo" alt="Brivviant">
@@ -133,9 +135,14 @@
     <input id="loginUsername" type="text" placeholder="Username">
     <input id="loginPassword" type="password" placeholder="Password">
     <button id="loginBtn">Login</button>
+    <button id="forgotPasswordBtn" type="button" class="ghost-login-btn">نسيت / تغيير كلمة المرور</button>
     <div id="loginError" class="login-error"></div>
   </div>
 </div>
+
+  <script src="config.js"></script>
+  <script src="data.js"></script>
+  <script src="script.js"></script>
 
 </body>
 </html>
