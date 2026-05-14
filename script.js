@@ -192,7 +192,7 @@ async function syncPeople(names){
   }
   for(const name of activeNames){
     const u=users.find(x=>x.name===name) || {name, username:name, passwordHash:'', role:'standard', isActive:true};
-    await apiUpsertPeople({name:u.name,username:u.username,password_hash:u.passwordHash||'',role:u.role||'standard',is_active:u.isActive!==false});
+    await apiUpsertPeople([{name:u.name,username:u.username,password_hash:u.passwordHash||'',role:u.role||'standard',is_active:u.isActive!==false}]);
   }
 }
 async function save(){ localSave(); renderAll(); await saveOnline(); }
@@ -268,13 +268,126 @@ async function deleteTaskFromCalendar(id){ const t=state.tasks.find(x=>x.id===id
 async function saveDelayReasonFromCard(btn,id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; const card=btn.closest('.task-card'); const textarea=card?.querySelector(`textarea[data-delay-for="${id}"]`); t.delayReason=(textarea?.value||'').trim(); if(isLate(t)) t.status='متأخر'; t.updatedAt=new Date().toISOString(); await save(); }
 function openTaskDialog(ch,pr){fillSelects();$('#taskForm').reset();$('#taskId').value='';$('#taskChannel').value=ch;$('#taskProgram').value=pr;$('#deleteTask').classList.add('hidden');$('#deleteTask').textContent='إخفاء من التاسكات';$('#dialogTitle').textContent=`إضافة تاسك — ${pr}`;$('#taskDue').value=today();$('#taskDialog').showModal()}
 function editTask(id){let t=state.tasks.find(x=>x.id===id); if(!t)return; fillSelects();$('#taskId').value=t.id;$('#taskChannel').value=t.channel;$('#taskProgram').value=t.program;$('#taskEpisodeName').value=t.episodeName||'';$('#taskEpisodeNumber').value=t.episodeNumber||'';$('#taskTitle').value=t.title;$('#taskOwner').value=t.owner;$('#taskStatus').value=t.status;$('#taskDue').value=t.due;$('#taskPriority').value=t.priority;$('#taskNotes').value=t.notes||'';$('#taskDelayReason').value=t.delayReason||'';$('#deleteTask').classList.remove('hidden');$('#deleteTask').textContent=isArchived(t)?'مخفي من التاسكات':'إخفاء من التاسكات';$('#deleteTask').disabled=isArchived(t);$('#dialogTitle').textContent='تعديل تاسك';$('#taskDialog').showModal()}
-async function saveTaskForm(e){e.preventDefault();let id=$('#taskId').value||crypto.randomUUID();let old=state.tasks.find(x=>x.id===id)||{};let t={...old,id,channel:$('#taskChannel').value,program:$('#taskProgram').value,episodeName:$('#taskEpisodeName').value,episodeNumber:$('#taskEpisodeNumber').value,title:$('#taskTitle').value,owner:$('#taskOwner').value,status:$('#taskStatus').value,due:$('#taskDue').value,priority:$('#taskPriority').value,notes:$('#taskNotes').value,delayReason:$('#taskDelayReason').value,updatedAt:new Date().toISOString()};state.tasks=state.tasks.filter(x=>x.id!==id).concat(t);$('#taskDialog').close();await save()}
-async function archiveFromDialog(){let id=$('#taskId').value;let t=state.tasks.find(x=>x.id===id);if(t){t.archivedFromTasks=true;t.archivedAt=new Date().toISOString();t.updatedAt=new Date().toISOString();}$('#taskDialog').close();await save()}
+async function saveTaskForm(e){e.preventDefault(); if(!isAdmin()) return alert('إنشاء أو تعديل التاسكات متاح للأدمن فقط.'); let id=$('#taskId').value||crypto.randomUUID();let old=state.tasks.find(x=>x.id===id)||{};let t={...old,id,channel:$('#taskChannel').value,program:$('#taskProgram').value,episodeName:$('#taskEpisodeName').value,episodeNumber:$('#taskEpisodeNumber').value,title:$('#taskTitle').value,owner:$('#taskOwner').value,status:$('#taskStatus').value,due:$('#taskDue').value,priority:$('#taskPriority').value,notes:$('#taskNotes').value,delayReason:$('#taskDelayReason').value,updatedAt:new Date().toISOString()};state.tasks=state.tasks.filter(x=>x.id!==id).concat(t);$('#taskDialog').close();await save()}
+async function archiveFromDialog(){ if(!isAdmin()) return alert('حذف التاسكات متاح للأدمن فقط.'); let id=$('#taskId').value;let t=state.tasks.find(x=>x.id===id);if(t){t.archivedFromTasks=true;t.archivedAt=new Date().toISOString();t.updatedAt=new Date().toISOString();}$('#taskDialog').close();await save()}
 function renderDaily(){let date=$('#dailyDate')?.value;let arr=activeTasks().filter(t=>t.due===date).sort((a,b)=>a.owner.localeCompare(b.owner));$('#dailyList').innerHTML=arr.length?arr.map(taskHtml).join(''):'<div class="panel">لا توجد تسليمات في هذا اليوم.</div>'}
 function renderCalendar(){ const wrap=$('#calendarGrid'); if(!wrap)return; const val=$('#calendarMonth').value||monthNow(); const [y,m]=val.split('-').map(Number); const first=new Date(y,m-1,1); const last=new Date(y,m,0); const startDay=(first.getDay()+6)%7; let html=''; for(let i=0;i<startDay;i++) html+='<div class="calendar-day empty"></div>'; for(let d=1; d<=last.getDate(); d++){ const date=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; const arr=state.tasks.filter(t=>t.due===date); html+=`<div class="calendar-day"><div class="day-number">${d}</div>${arr.map(t=>`<span class="mini-task ${isArchived(t)?'mini-archived':''}"><span data-action="edit-task" data-id="${safeAttr(t.id)}"><strong>${safe(t.title)}</strong>${safe(t.owner)} • ح${safe(t.episodeNumber||'-')} ${isArchived(t)?'• محفوظ بالكالندر':''}</span><button class="calendar-delete-btn" data-action="delete-calendar" data-id="${safeAttr(t.id)}" title="حذف نهائي من الكالندر">×</button></span>`).join('')}</div>`; } wrap.innerHTML=html; }
 function renderFlow(){ const box=$('#flowChart'); if(!box)return; const filter=$('#flowFilter').value; let channels=state.channels.filter(c=>!filter||c.name===filter); box.innerHTML=channels.map(ch=>`<div class="flow-channel"><h2>${safe(ch.name)}</h2><div class="flow-programs">${ch.programs.map(pr=>{const tasks=activeTasks().filter(t=>t.channel===ch.name&&t.program===pr); const episodes={}; tasks.forEach(t=>{const key=(t.episodeNumber||'-')+' — '+(t.episodeName||'بدون اسم حلقة'); episodes[key]??=[]; episodes[key].push(t);}); return `<div class="flow-program"><h3>${safe(pr)}</h3>${Object.keys(episodes).length?Object.keys(episodes).map(ep=>`<div class="flow-episode"><b>${safe(ep)}</b>${episodes[ep].map(t=>`<div class="flow-task">${safe(t.title)} → ${safe(t.owner)} • ${safe(t.status)}</div>`).join('')}</div>`).join(''):'<p class="muted">لا توجد حلقات/تاسكات بعد.</p>'}</div>`}).join('')}</div></div>`).join('') || '<div class="panel">لا توجد بيانات.</div>'; }
 function renderDrawer(){let p=$('#filterPerson')?.value||'',s=$('#filterStatus')?.value||'',q=$('#searchInput')?.value.trim()||'';let arr=activeTasks().filter(t=>(!p||t.owner===p)&&(!s||t.status===s)&&(!q||JSON.stringify(t).includes(q))).sort((a,b)=>(a.due||'').localeCompare(b.due||''));$('#drawerTasks').innerHTML=arr.length?arr.map(taskHtml).join(''):'<p>لا توجد نتائج.</p>'}
 function renderDeliveryAlerts(){ const box=$('#deliveryAlerts'); if(!box)return; const names=getPeopleNames(); if(!names.length){ box.innerHTML='<div class="alert-card green">لا يوجد أعضاء فريق بعد.</div>'; return; } box.innerHTML=names.map(p=>{ const tasks=activeTasks().filter(t=>t.owner===p); const todayTasks=tasks.filter(isDueToday); const lateTasks=tasks.filter(isLate); const cls=lateTasks.length?'red':(todayTasks.length?'orange':'green'); const reason=lateTasks.slice(0,2).map(t=>`${safe(t.title)}: ${safe(t.delayReason||'لم يكتب سبب التأخير')}`).join('<br>'); return `<div class="alert-card ${cls}"><div class="alert-name">${safe(p)}</div><div class="alert-counts"><span>اليوم: ${todayTasks.length}</span><span>متأخر: ${lateTasks.length}</span></div>${lateTasks.length?`<small>${reason}</small>`:'<small>لا توجد مشاكل تسليم.</small>'}</div>`; }).join(''); }
+
+function renderTeam(){
+  const grid=$('#teamGrid'); if(!grid)return;
+  const users=normalizeUsers(state.users);
+  const names=[...new Set([...users.map(u=>u.name), ...getPeopleNames()])];
+  grid.innerHTML=names.map(name=>{
+    const u=users.find(x=>x.name===name) || {name, username:name, role:'standard', passwordHash:''};
+    let tasks=activeTasks().filter(t=>t.owner===name);
+    let cls=tasks.filter(isLate).length?'red':(tasks.filter(isDueToday).length?'orange':'green');
+    return `<div class="person-card team-status-card ${cls}"><h3>${safe(name)}</h3><p>${tasks.length} تاسكات</p><span class="pill">Username: ${safe(u.username||'-')}</span><span class="pill">Role: ${safe(u.role||'standard')}</span><span class="pill">Password: ${u.passwordHash?'محفوظة بشكل مؤمّن':'لم يتم تعيينها'}</span><span class="pill">${tasks.filter(isDone).length} تم</span><span class="pill">${tasks.filter(isDueToday).length} تسليم اليوم</span><span class="pill">${tasks.filter(isLate).length} متأخر</span><div class="person-actions"><button data-action="rename-person" data-name="${safeAttr(name)}">تعديل الحساب</button><button data-action="reset-password" data-name="${safeAttr(name)}">تغيير كلمة المرور</button><button class="danger small-danger" data-action="remove-person" data-name="${safeAttr(name)}">حذف</button></div></div>`
+  }).join('') || '<div class="panel">لا يوجد أعضاء فريق بعد.</div>';
+}
+async function addPerson(){
+  if(!isAdmin()) return alert('إضافة الأشخاص متاحة للأدمن فقط.');
+  const name=(prompt('اكتب اسم عضو الفريق الجديد:')||'').trim(); if(!name) return;
+  const username=(prompt('اكتب Username للحساب:', name.replace(/\s+/g,'.').toLowerCase())||'').trim(); if(!username) return;
+  if(normalizeUsers(state.users).some(u=>u.username===username || u.name===name)){ alert('الاسم أو Username موجود بالفعل.'); return; }
+  const password=prompt('اكتب Password للحساب — 8 أحرف على الأقل:')||''; if(password.length<8) return alert('كلمة المرور يجب أن تكون 8 أحرف على الأقل.');
+  const roleRaw=(prompt('نوع الحساب: اكتب admin أو standard','standard')||'standard').trim().toLowerCase();
+  const role=roleRaw==='admin'?'admin':'standard';
+  state.users.push({id:crypto.randomUUID(),name,username,passwordHash:await hashPassword(password),role,isActive:true,createdAt:new Date().toISOString()});
+  syncPeopleFromUsers();
+  await save();
+}
+async function renamePerson(oldName){
+  if(!isAdmin()) return alert('تعديل الأشخاص متاح للأدمن فقط.');
+  const user=getUserByName(oldName);
+  const name=(prompt('تعديل اسم عضو الفريق:', oldName)||'').trim(); if(!name) return;
+  const username=(prompt('تعديل Username:', user?.username||oldName)||'').trim(); if(!username) return;
+  const roleRaw=(prompt('نوع الحساب: admin أو standard', user?.role||'standard')||'standard').trim().toLowerCase();
+  const role=roleRaw==='admin'?'admin':'standard';
+  const dup=normalizeUsers(state.users).some(u=>(u.username===username || u.name===name) && u.name!==oldName && u.username!==user?.username);
+  if(dup){ alert('الاسم أو Username مستخدم بالفعل.'); return; }
+  if(user){ user.name=name; user.username=username; user.role=role; user.isActive=true; }
+  else state.users.push({id:crypto.randomUUID(),name,username,passwordHash:'',role,isActive:true,createdAt:new Date().toISOString()});
+  state.people=getPeopleNames().map(p=>p===oldName?name:p);
+  state.tasks.forEach(t=>{ if(t.owner===oldName) t.owner=name; if(t.deliveredBy===oldName) t.deliveredBy=name; });
+  state.uploads.forEach(u=>{ if(u.by===oldName) u.by=name; });
+  syncPeopleFromUsers();
+  await save();
+}
+async function removePerson(name){
+  if(!isAdmin()) return alert('حذف الأشخاص متاح للأدمن فقط.');
+  if(name===DEFAULT_ADMIN.name) return alert('لا يمكن حذف حساب الأدمن الأساسي.');
+  const assigned=state.tasks.filter(t=>t.owner===name && !isDone(t)).length;
+  if(assigned && !confirm(`${name} عليه ${assigned} تاسك غير منتهي. هل تريد إيقاف الحساب مع ترك التاسكات باسمه؟`)) return;
+  if(!assigned && !confirm(`حذف / إيقاف ${name} من الفريق؟`)) return;
+  state.people=getPeopleNames().filter(p=>p!==name);
+  state.users=(state.users||[]).map(u=>u.name===name?{...u,isActive:false}:u);
+  await save();
+}
+function renderStats(){let t=activeTasks();$('#statTasks').textContent=t.length;$('#statDone').textContent=t.filter(isDone).length;$('#statLate').textContent=t.filter(isLate).length}
+function renderUploads(){ const list=$('#uploadsList'); if(!list)return; list.innerHTML=(state.uploads||[]).map(u=>`<div class="upload-card"><h3>${safe(u.name)}</h3><div class="upload-meta"><span>${safe(u.channel)}</span><span>${safe(u.program)}</span><span>حلقة: ${safe(u.episode||'-')}</span><span>رفع: ${safe(u.by)}</span><span>${safe(u.createdAtText||'')}</span>${u.taskTitle?`<span>تاسك: ${safe(u.taskTitle)}</span>`:''}</div>${u.link?`<p><a href="${safeAttr(u.link)}" target="_blank">فتح الرابط</a></p>`:''}${u.githubPath?`<p class="muted">GitHub: ${safe(u.githubPath)}</p>`:''}${u.notes?`<small>${safe(u.notes)}</small>`:''}</div>`).join('') || '<div class="panel">لا توجد مرفوعات بعد.</div>'; }
+function renderMyTasks(){
+  const box=$('#myTasksList'); if(!box)return;
+  const me=currentUser();
+  if(!me){ box.innerHTML='<div class="panel">سجل الدخول أولاً.</div>'; return; }
+  const arr=activeTasks().filter(t=>t.owner===me.name).sort((a,b)=>(a.due||'').localeCompare(b.due||''));
+  box.innerHTML=arr.length?arr.map(taskHtml).join(''):'<div class="panel">لا توجد تاسكات مخصصة لحسابك.</div>';
+}
+function openUploadDialog(){ fillSelects(); $('#uploadForm').reset(); updateUploadPrograms(); const me=currentUser(); if(me && !isAdmin()){ $('#uploadBy').value=me.name; $('#uploadBy').disabled=true; } $('#uploadDialog').showModal(); }
+async function saveUploadForm(e){
+  e.preventDefault();
+  const file=$('#uploadFile').files[0]; let github=null; const linkedTaskId=$('#uploadTask').value; const linkedTask=state.tasks.find(t=>t.id===linkedTaskId);
+  const me=currentUser();
+  if(!isAdmin() && linkedTask && linkedTask.owner!==me?.name) return alert('يمكنك رفع ملفات لتاسكاتك فقط.');
+  const meta={channel:$('#uploadChannel').value,program:$('#uploadProgram').value,episode:$('#uploadEpisode').value,name:$('#uploadName').value};
+  try{github=await uploadFileDirectToGithub(file,meta)}catch(err){console.error(err);alert('تم حفظ السجل، لكن رفع الملف على GitHub لم يكتمل. اتأكد من التوكن وصلاحية Contents Read/Write.')}
+  const byName=(!isAdmin() && me)?me.name:$('#uploadBy').value;
+  const item={id:crypto.randomUUID(),name:$('#uploadName').value,channel:$('#uploadChannel').value,program:$('#uploadProgram').value,episode:$('#uploadEpisode').value,by:byName,taskId:linkedTaskId,taskTitle:linkedTask?.title||'',link:$('#uploadLink').value || github?.url || '',githubPath:github?.path || '',notes:$('#uploadNotes').value,createdAt:new Date().toISOString(),createdAtText:new Date().toLocaleString('ar-EG')};
+  state.uploads=[item,...(state.uploads||[])];
+  if(linkedTask){ linkedTask.status='تم التسليم'; linkedTask.deliveredAt=item.createdAt; linkedTask.deliveredBy=item.by; linkedTask.deliveredUploadId=item.id; linkedTask.updatedAt=item.createdAt; linkedTask.delayReason=''; }
+  $('#uploadDialog').close(); await save();
+}
+function renderAll(){state=normalizeState(state);syncPeopleFromUsers();renderChannels();fillSelects();renderDaily();renderCalendar();renderFlow();renderDrawer();renderTeam();renderStats();renderUploads();renderDeliveryAlerts();renderMyTasks();applyRolePermissions();}
+function bindEvents(){
+  $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>{$$('.nav-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');$$('.tab').forEach(t=>t.classList.remove('active'));$('#'+b.dataset.tab).classList.add('active');$('#pageTitle').textContent=b.textContent;renderAll()}));
+  $('#indexBtn')?.addEventListener('click',()=>$('#drawer').classList.add('open'));
+  $('#closeDrawer')?.addEventListener('click',()=>$('#drawer').classList.remove('open'));
+  ['filterPerson','filterStatus','searchInput','dailyDate','calendarMonth','flowFilter'].forEach(id=>$('#'+id)?.addEventListener('input',renderAll));
+  $('#todayBtn')?.addEventListener('click',()=>{$('#calendarMonth').value=monthNow();renderCalendar()});
+  $('#exportBtn')?.addEventListener('click',()=>{let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.download='brivviant-platform-data.json';a.click()});
+  $('#importInput')?.addEventListener('change',e=>{let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=async()=>{state=normalizeState(JSON.parse(r.result));await ensureDefaultAdmin();await save()};r.readAsText(f)});
+  $('#saveTask')?.addEventListener('click',saveTaskForm);
+  $('#deleteTask')?.addEventListener('click',archiveFromDialog);
+  $('#cancelTask')?.addEventListener('click',()=>$('#taskDialog').close());
+  $('#addPersonBtn')?.addEventListener('click',addPerson);
+  $('#openUploadDialog')?.addEventListener('click',openUploadDialog);
+  $('#cancelUpload')?.addEventListener('click',()=>$('#uploadDialog').close());
+  $('#uploadChannel')?.addEventListener('change',updateUploadPrograms);
+  $('#uploadProgram')?.addEventListener('change',updateUploadTasks);
+  $('#uploadEpisode')?.addEventListener('input',updateUploadTasks);
+  $('#saveUpload')?.addEventListener('click',saveUploadForm);
+  document.addEventListener('click',async e=>{
+    const el=e.target.closest('[data-action]'); if(!el)return;
+    const a=el.dataset.action;
+    if((a==='open-task-dialog'||a==='edit-task'||a==='archive-task'||a==='delete-calendar'||a==='rename-person'||a==='remove-person'||a==='reset-password') && !isAdmin()){
+      if(a!=='reset-password') return alert('هذا الإجراء متاح للأدمن فقط.');
+    }
+    if(a==='open-channel') openChannel(el.dataset.channel);
+    if(a==='open-task-dialog') openTaskDialog(el.dataset.channel,el.dataset.program);
+    if(a==='show-program-tasks') showProgramTasks(el.dataset.channel,el.dataset.program);
+    if(a==='edit-task') editTask(el.dataset.id);
+    if(a==='mark-done') await markTaskDone(el.dataset.id);
+    if(a==='archive-task') await archiveTaskFromLists(el.dataset.id);
+    if(a==='delete-calendar') { e.stopPropagation(); await deleteTaskFromCalendar(el.dataset.id); }
+    if(a==='save-delay') await saveDelayReasonFromCard(el,el.dataset.id);
+    if(a==='rename-person') await renamePerson(el.dataset.name);
+    if(a==='remove-person') await removePerson(el.dataset.name);
+    if(a==='reset-password') await resetPasswordForUser(el.dataset.name);
+  });
+}
+
 async function resetPasswordForUser(name){
   const me=currentUser();
   const target=getUserByName(name);
@@ -334,7 +447,8 @@ async function boot(){
   await ensureDefaultAdmin();
   $('#dailyDate').value=today(); $('#calendarMonth').value=monthNow();
   bindEvents();
-  $('#loginBtn')?.addEventListener('click',login);
+  $('#loginForm')?.addEventListener('submit',e=>{ e.preventDefault(); login(); });
+  $('#loginBtn')?.addEventListener('click',e=>{ e.preventDefault(); login(); });
   $('#loginPassword')?.addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
   $('#forgotPasswordBtn')?.addEventListener('click',showForgotPassword);
   await initOnline();

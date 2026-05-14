@@ -129,15 +129,15 @@
   </dialog>
 
 <div id="loginOverlay" class="login-overlay">
-  <div class="login-panel">
+  <form class="login-panel" id="loginForm">
     <img src="assets/brivviant-logo.png" class="login-logo" alt="Brivviant">
     <h2>Brivviant Login Panel</h2>
     <input id="loginUsername" type="text" placeholder="Username">
     <input id="loginPassword" type="password" placeholder="Password">
-    <button id="loginBtn">Login</button>
+    <button id="loginBtn" type="submit">Login</button>
     <button id="forgotPasswordBtn" type="button" class="ghost-login-btn">نسيت / تغيير كلمة المرور</button>
     <div id="loginError" class="login-error"></div>
-  </div>
+  </form>
 </div>
 
   <script src="config.js"></script>
