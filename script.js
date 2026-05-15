@@ -348,6 +348,11 @@ async function apiDeleteAll(table){
   const res=await fetch(apiBase()+table+'?id=not.is.null',{method:'DELETE',headers:apiHeaders()});
   if(!res.ok) throw new Error(table+' DELETE '+res.status+': '+await res.text());
 }
+async function apiDeleteById(table,id){
+  if(!id) return;
+  const res=await fetch(apiBase()+table+'?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:apiHeaders()});
+  if(!res.ok) throw new Error(table+' DELETE '+res.status+': '+await res.text());
+}
 async function initOnline(){
   if(!hasGithubConfig()){ setSync('Local Ready — Supabase Config Missing'); renderAll(); return; }
   setSync('Loading Supabase Tables...');
@@ -513,7 +518,7 @@ function renderChannels(){
   grid.innerHTML='';
   state.channels.forEach(ch=>{let d=document.createElement('div'); d.className='channel-card';
     const tasksCount=activeTasks().filter(t=>t.channel===ch.name).length;
-    const adminActions=isAdmin()?`<div class="channel-admin-actions"><button data-action="add-program" data-channel="${safeAttr(ch.name)}">+ برنامج</button></div>`:'';
+    const adminActions=isAdmin()?`<div class="channel-admin-actions"><button data-action="add-program" data-channel="${safeAttr(ch.name)}">+ برنامج</button><button class="danger small-danger" data-action="delete-channel" data-channel="${safeAttr(ch.name)}">حذف القناة</button></div>`:'';
     d.innerHTML=`<h2>${safe(ch.name)}</h2><p>${ch.programs.length} برامج / ${tasksCount} تاسكات</p>${ch.programs.slice(0,4).map(p=>`<span class="pill">${safe(p)}</span>`).join('')}${adminActions}`;
     d.dataset.action='open-channel'; d.dataset.channel=ch.name; grid.appendChild(d);
   });
@@ -521,8 +526,8 @@ function renderChannels(){
 function openChannel(chName){
   const ch=state.channels.find(c=>c.name===chName); if(!ch)return;
   let p=$('#programPanel'); p.classList.remove('hidden');
-  const addProgramBtn=isAdmin()?`<button data-action="add-program" data-channel="${safeAttr(ch.name)}">+ إضافة برنامج داخل القناة</button>`:'';
-  p.innerHTML=`<div class="program-panel-head"><h2>${safe(ch.name)}</h2>${addProgramBtn}</div><div class="programs">${ch.programs.map(pr=>{let prog=taskProgress(ch.name,pr);let count=activeTasks().filter(t=>t.channel===ch.name&&t.program===pr).length;return `<div class="program-card"><h3>${safe(pr)}</h3><div class="progress"><span style="width:${prog}%"></span></div><p>${prog}% إنجاز • ${count} تاسكات</p><button data-action="open-task-dialog" data-channel="${safeAttr(ch.name)}" data-program="${safeAttr(pr)}">+ إضافة تاسك</button><button data-action="show-program-tasks" data-channel="${safeAttr(ch.name)}" data-program="${safeAttr(pr)}">عرض التاسكات</button><div id="tasks-${slug(ch.name+pr)}" class="task-list"></div></div>`}).join('')}</div>`;
+  const addProgramBtn=isAdmin()?`<button data-action="add-program" data-channel="${safeAttr(ch.name)}">+ إضافة برنامج داخل القناة</button><button class="danger small-danger" data-action="delete-channel" data-channel="${safeAttr(ch.name)}">حذف القناة</button>`:'';
+  p.innerHTML=`<div class="program-panel-head"><h2>${safe(ch.name)}</h2>${addProgramBtn}</div><div class="programs">${ch.programs.map(pr=>{let prog=taskProgress(ch.name,pr);let count=activeTasks().filter(t=>t.channel===ch.name&&t.program===pr).length;return `<div class="program-card"><div class="program-card-head"><h3>${safe(pr)}</h3>${isAdmin()?`<button class="danger small-danger" data-action="delete-program" data-channel="${safeAttr(ch.name)}" data-program="${safeAttr(pr)}">حذف البرنامج</button>`:''}</div><div class="progress"><span style="width:${prog}%"></span></div><p>${prog}% إنجاز • ${count} تاسكات</p><button data-action="open-task-dialog" data-channel="${safeAttr(ch.name)}" data-program="${safeAttr(pr)}">+ إضافة تاسك</button><button data-action="show-program-tasks" data-channel="${safeAttr(ch.name)}" data-program="${safeAttr(pr)}">عرض التاسكات</button><div id="tasks-${slug(ch.name+pr)}" class="task-list"></div></div>`}).join('')}</div>`;
   p.scrollIntoView({behavior:'smooth'});
 }
 function showProgramTasks(ch,pr){let box=$(`#tasks-${slug(ch+pr)}`); if(!box)return; let tasks=activeTasks().filter(t=>t.channel===ch&&t.program===pr).sort((a,b)=>(a.due||'').localeCompare(b.due||''));box.innerHTML=tasks.length?tasks.map(taskHtml).join(''):'<p class="muted">لا توجد تاسكات بعد.</p>'}
@@ -704,12 +709,58 @@ function openProgramDialog(channelName=''){
   channel.programs.push(name);
   logAction('PROGRAM_CREATE',`إضافة برنامج ${name} داخل قناة ${channel.name}`,channel.name).finally(()=>save());
 }
+async function deleteChannelAdmin(channelName){
+  if(!isAdmin()) return alert('حذف القنوات متاح للأدمن فقط.');
+  const ch=state.channels.find(c=>c.name===channelName);
+  if(!ch) return alert('القناة غير موجودة.');
+  const tasksCount=(state.tasks||[]).filter(t=>t.channel===channelName).length;
+  const programsCount=(ch.programs||[]).length;
+  if(!confirm(`حذف القناة "${channelName}"؟\nسيتم حذف ${programsCount} برامج و ${tasksCount} تاسكات مرتبطة بها نهائيًا. لا يمكن الرجوع إلا من نسخة احتياطية.`)) return;
+  state.channels=state.channels.filter(c=>c.name!==channelName);
+  const deletedTaskIds=(state.tasks||[]).filter(t=>t.channel===channelName).map(t=>t.id);
+  state.tasks=(state.tasks||[]).filter(t=>t.channel!==channelName);
+  state.uploads=(state.uploads||[]).map(u=>u.channel===channelName || deletedTaskIds.includes(u.taskId) ? {...u, taskId:'', taskTitle:(u.taskTitle||'')+' — مرتبط بقناة محذوفة', channel:'', program:''} : u);
+  $('#programPanel')?.classList.add('hidden');
+  await logAction('CHANNEL_DELETE',`حذف قناة ${channelName} بكل البرامج والتاسكات المرتبطة`,channelName);
+  await save();
+}
+async function deleteProgramAdmin(channelName, programName){
+  if(!isAdmin()) return alert('حذف البرامج متاح للأدمن فقط.');
+  const ch=state.channels.find(c=>c.name===channelName);
+  if(!ch) return alert('القناة غير موجودة.');
+  if(!(ch.programs||[]).includes(programName)) return alert('البرنامج غير موجود داخل القناة.');
+  const tasksCount=(state.tasks||[]).filter(t=>t.channel===channelName && t.program===programName).length;
+  if(!confirm(`حذف برنامج "${programName}" من قناة "${channelName}"؟\nسيتم حذف ${tasksCount} تاسكات مرتبطة به نهائيًا. لا يمكن الرجوع إلا من نسخة احتياطية.`)) return;
+  ch.programs=(ch.programs||[]).filter(p=>p!==programName);
+  const deletedTaskIds=(state.tasks||[]).filter(t=>t.channel===channelName && t.program===programName).map(t=>t.id);
+  state.tasks=(state.tasks||[]).filter(t=>!(t.channel===channelName && t.program===programName));
+  state.uploads=(state.uploads||[]).map(u=>u.channel===channelName && u.program===programName || deletedTaskIds.includes(u.taskId) ? {...u, taskId:'', taskTitle:(u.taskTitle||'')+' — مرتبط ببرنامج محذوف', program:''} : u);
+  await logAction('PROGRAM_DELETE',`حذف برنامج ${programName} من قناة ${channelName} مع التاسكات المرتبطة`,channelName);
+  await save();
+  openChannel(channelName);
+}
 async function saveChannelsProgramsOnline(){
   if(!hasGithubConfig()) return;
   const channels=(state.channels||[]).map((c,i)=>({id:c.id||('ch_'+slug(c.name).slice(0,24)),name:c.name,sort_order:i+1}));
+  const currentChannelIds=new Set(channels.map(c=>c.id));
+  try{
+    const existingChannels=await apiGet('channels','?select=id,name');
+    for(const row of existingChannels){
+      if(row.id && !currentChannelIds.has(row.id)) await apiDeleteById('channels',row.id);
+    }
+  }catch(e){ console.warn('channel cleanup skipped', e); }
   if(channels.length) await apiUpsertById('channels', channels);
+
   const programRows=[];
   (state.channels||[]).forEach((c)=>{ const cid=c.id||('ch_'+slug(c.name).slice(0,24)); (c.programs||[]).forEach((p,i)=>programRows.push({channel_id:cid,name:p,sort_order:i+1})); });
+  const keepProgramKeys=new Set(programRows.map(p=>`${p.channel_id}|||${p.name}`));
+  try{
+    const existingPrograms=await apiGet('programs','?select=id,channel_id,name');
+    for(const row of existingPrograms){
+      const key=`${row.channel_id}|||${row.name}`;
+      if(row.id && !keepProgramKeys.has(key)) await apiDeleteById('programs',row.id);
+    }
+  }catch(e){ console.warn('program cleanup skipped', e); }
   if(programRows.length){
     const res=await fetch(apiBase()+'programs?on_conflict=channel_id,name',{method:'POST',headers:apiHeaders({'Prefer':'resolution=merge-duplicates,return=representation'}),body:JSON.stringify(programRows)});
     if(!res.ok) throw new Error('programs UPSERT '+res.status+': '+await res.text());
@@ -878,11 +929,13 @@ function bindEvents(){
     if(e.target && e.target.closest('#sendChatBtn')){ e.preventDefault(); await sendChat(); return; }
     const el=e.target.closest('[data-action]'); if(!el)return;
     const a=el.dataset.action;
-    if((a==='open-task-dialog'||a==='edit-task'||a==='archive-task'||a==='delete-calendar'||a==='delete-task-forever'||a==='rename-person'||a==='edit-account'||a==='remove-person'||a==='add-channel'||a==='add-program'||a==='add-program-global') && !isAdmin()){
+    if((a==='open-task-dialog'||a==='edit-task'||a==='archive-task'||a==='delete-calendar'||a==='delete-task-forever'||a==='rename-person'||a==='edit-account'||a==='remove-person'||a==='add-channel'||a==='add-program'||a==='add-program-global'||a==='delete-channel'||a==='delete-program') && !isAdmin()){
       return alert('هذا الإجراء متاح للأدمن فقط.');
     }
     if(a==='add-channel') { e.stopPropagation(); openChannelDialog(); return; }
     if(a==='add-program' || a==='add-program-global') { e.stopPropagation(); openProgramDialog(el.dataset.channel||''); return; }
+    if(a==='delete-channel') { e.stopPropagation(); await deleteChannelAdmin(el.dataset.channel||''); return; }
+    if(a==='delete-program') { e.stopPropagation(); await deleteProgramAdmin(el.dataset.channel||'', el.dataset.program||''); return; }
     if(a==='open-channel') openChannel(el.dataset.channel);
     if(a==='open-task-dialog') openTaskDialog(el.dataset.channel,el.dataset.program);
     if(a==='show-program-tasks') showProgramTasks(el.dataset.channel,el.dataset.program);
