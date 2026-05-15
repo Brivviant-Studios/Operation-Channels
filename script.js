@@ -15,6 +15,8 @@ state.tasks = state.tasks || [];
 state.uploads = state.uploads || [];
 state.logs = state.logs || [];
 state.users = Array.isArray(state.users) ? state.users : [];
+state.notifications = Array.isArray(state.notifications) ? state.notifications : [];
+state.chats = Array.isArray(state.chats) ? state.chats : [];
 const DEFAULT_ADMIN = { name:'Brivviant', username:'Brivviant', password:'Brivviant@123456', role:'admin', isActive:true };
 const roleLabel=r=>(r==='admin'?'Admin':'Staff');
 const normalizeRole=r=>(String(r||'standard').toLowerCase()==='admin'?'admin':'standard');
@@ -39,6 +41,48 @@ function clearSession(){ localStorage.removeItem(AUTH_KEY); }
 function currentSession(){ return getSession(); }
 function currentUser(){ const ss=currentSession(); return ss ? normalizeUsers(state.users).find(u=>u.username===ss.username) || ss : null; }
 function isAdmin(){ return (currentUser()?.role || currentSession()?.role) === 'admin'; }
+
+function adminUsers(){ return normalizeUsers(state.users).filter(u=>u.role==='admin' && u.isActive!==false); }
+function getUserNamesExceptMe(){ const me=currentUser(); return normalizeUsers(state.users).filter(u=>u.isActive!==false && u.name!==me?.name).map(u=>u.name); }
+function notifyUser(to, type, title, body='', taskId=''){
+  if(!to) return;
+  state.notifications = Array.isArray(state.notifications) ? state.notifications : [];
+  state.notifications.unshift({id:crypto.randomUUID?.()||String(Date.now()+Math.random()),to,type,title,body,taskId,read:false,createdAt:new Date().toISOString(),createdAtText:new Date().toLocaleString('ar-EG')});
+  state.notifications = state.notifications.slice(0,500);
+  localSave();
+  renderNotifications?.();
+}
+function notifyAdmins(type,title,body='',taskId=''){
+  adminUsers().forEach(u=>notifyUser(u.name,type,title,body,taskId));
+}
+function myNotifications(){ const me=currentUser(); if(!me) return []; return (state.notifications||[]).filter(n=>n.to===me.name || n.to===me.username); }
+function unreadNotifications(){ return myNotifications().filter(n=>!n.read); }
+function renderNotifications(){
+  const count=unreadNotifications().length;
+  const badge=$('#notifBadge'); if(badge){ badge.textContent=count; badge.classList.toggle('hidden',!count); }
+  const list=$('#notificationsList'); if(!list) return;
+  const arr=myNotifications();
+  list.innerHTML=arr.length?arr.map(n=>`<div class="notification-card ${n.read?'read':''}"><b>${safe(n.title||'إشعار')}</b><small>${safe(n.createdAtText||'')}</small><p>${safe(n.body||'')}</p>${n.taskId?`<button data-action="open-notification-task" data-id="${safeAttr(n.taskId)}">فتح التاسك</button>`:''}</div>`).join(''):'<div class="panel">لا توجد إشعارات.</div>';
+}
+function openNotifications(){ (state.notifications||[]).forEach(n=>{ const me=currentUser(); if(me && (n.to===me.name || n.to===me.username)) n.read=true; }); localSave(); renderNotifications(); $('#notificationDialog')?.showModal(); }
+function chatUnreadCount(){ const me=currentUser(); if(!me) return 0; return (state.chats||[]).filter(m=>m.to===me.name && !m.read).length; }
+function renderChatBadge(){ const b=$('#chatBadge'); if(!b) return; const c=chatUnreadCount(); b.textContent=c; b.classList.toggle('hidden',!c); }
+let activeChatWith='';
+function chatBetween(name){ const me=currentUser(); if(!me || !name) return []; return (state.chats||[]).filter(m=>(m.from===me.name&&m.to===name)||(m.from===name&&m.to===me.name)).sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||'')); }
+function renderChat(){
+  const me=currentUser(); if(!me) return;
+  const users=normalizeUsers(state.users).filter(u=>u.isActive!==false && u.name!==me.name);
+  $('#chatUsers').innerHTML=users.map(u=>{const unread=(state.chats||[]).filter(m=>m.from===u.name&&m.to===me.name&&!m.read).length;return `<button class="chat-user ${activeChatWith===u.name?'active':''}" data-action="select-chat" data-name="${safeAttr(u.name)}"><span>${safe(u.nickname||u.name)}</span>${unread?`<em>${unread}</em>`:''}</button>`}).join('')||'<div class="panel">لا توجد حسابات.</div>';
+  $('#chatRoomTitle').textContent=activeChatWith?`محادثة مع ${activeChatWith}`:'اختر حساب للمحادثة';
+  if(activeChatWith){ (state.chats||[]).forEach(m=>{ if(m.from===activeChatWith && m.to===me.name) m.read=true; }); localSave(); }
+  const msgs=activeChatWith?chatBetween(activeChatWith):[];
+  $('#chatMessages').innerHTML=msgs.map(m=>`<div class="chat-msg ${m.from===me.name?'mine':'theirs'}"><b>${safe(m.from)}</b><p>${safe(m.text)}</p><small>${safe(m.createdAtText||'')}</small></div>`).join('') || '<div class="muted chat-empty">لا توجد رسائل بعد.</div>';
+  renderChatBadge();
+}
+function openChat(){ renderChat(); $('#chatDialog')?.showModal(); }
+async function sendChat(){ const me=currentUser(); const text=($('#chatInput')?.value||'').trim(); if(!me || !activeChatWith || !text) return; state.chats=Array.isArray(state.chats)?state.chats:[]; const msg={id:crypto.randomUUID?.()||String(Date.now()+Math.random()),from:me.name,to:activeChatWith,text,read:false,createdAt:new Date().toISOString(),createdAtText:new Date().toLocaleString('ar-EG')}; state.chats.push(msg); $('#chatInput').value=''; notifyUser(activeChatWith,'CHAT','رسالة شات جديدة',`${me.name}: ${text}`,''); await logAction('CHAT_MESSAGE',`رسالة شات من ${me.name} إلى ${activeChatWith}`,activeChatWith); await save(); renderChat(); }
+function userCanHandover(t){ const me=currentUser(); return !!t && (isAdmin() || t.owner===me?.name); }
+function userCanRaiseIssue(t){ const me=currentUser(); return !!t && (isAdmin() || t.owner===me?.name); }
 
 function canEditDelayReason(t){
   if(!t || !isLate(t)) return false;
@@ -90,6 +134,8 @@ function uiLogToDb(l){
 async function hashPassword(password){ return String(password||''); }
 async function ensureDefaultAdmin(){
   state.users = Array.isArray(state.users) ? state.users : [];
+state.notifications = Array.isArray(state.notifications) ? state.notifications : [];
+state.chats = Array.isArray(state.chats) ? state.chats : [];
   let admin = state.users.find(u=>u.username===DEFAULT_ADMIN.username || u.name===DEFAULT_ADMIN.name);
   if(!admin){
     admin = {...DEFAULT_ADMIN, id:crypto.randomUUID?.()||String(Date.now()), nickname:'Main Admin', email:'', role:'admin', password:DEFAULT_ADMIN.password};
@@ -251,15 +297,15 @@ async function save(){ localSave(); renderAll(); await saveOnline(); }
 
 function normalizeState(s){
   s=s||{};
-  const out = {channels:Array.isArray(s.channels)?s.channels:SEED_DATA.channels,people:Array.isArray(s.people)?s.people:SEED_DATA.people,statuses:Array.isArray(s.statuses)?s.statuses:SEED_DATA.statuses,tasks:Array.isArray(s.tasks)?s.tasks:[],uploads:Array.isArray(s.uploads)?s.uploads:[],logs:Array.isArray(s.logs)?s.logs:[],users:normalizeUsers(s.users)};
+  const out = {channels:Array.isArray(s.channels)?s.channels:SEED_DATA.channels,people:Array.isArray(s.people)?s.people:SEED_DATA.people,statuses:Array.isArray(s.statuses)?s.statuses:SEED_DATA.statuses,tasks:Array.isArray(s.tasks)?s.tasks:[],uploads:Array.isArray(s.uploads)?s.uploads:[],logs:Array.isArray(s.logs)?s.logs:[],notifications:Array.isArray(s.notifications)?s.notifications:[],chats:Array.isArray(s.chats)?s.chats:[],users:normalizeUsers(s.users)};
   out.people=out.people.map(personName).filter(Boolean);
   return out;
 }
 function dbTaskToUi(t){
-  return {id:t.id,channel:t.channel_name||'',program:t.program_name||'',episodeName:t.episode_name||'',episodeNumber:t.episode_number||'',title:t.title||'',owner:t.owner_name||'',status:t.status||'لم يبدأ',due:t.due||'',priority:t.priority||'Normal',notes:t.notes||'',delayReason:t.delay_reason||'',archivedFromTasks:!!t.archived_from_tasks,archivedAt:t.archived_at||'',deliveredAt:t.delivered_at||'',deliveredBy:t.delivered_by||'',deliveredUploadId:t.delivered_upload_id||'',updatedAt:t.updated_at||'',createdAt:t.created_at||''};
+  return {id:t.id,channel:t.channel_name||'',program:t.program_name||'',episodeName:t.episode_name||'',episodeNumber:t.episode_number||'',title:t.title||'',owner:t.owner_name||'',status:t.status||'لم يبدأ',due:t.due||'',priority:t.priority||'Normal',notes:t.notes||'',delayReason:t.delay_reason||'',archivedFromTasks:!!t.archived_from_tasks,archivedAt:t.archived_at||'',deliveredAt:t.delivered_at||'',deliveredBy:t.delivered_by||'',deliveredUploadId:t.delivered_upload_id||'',updatedAt:t.updated_at||'',createdAt:t.created_at||'',issue:t.issue||null,handoverHistory:t.handover_history||[]};
 }
 function uiTaskToDb(t){
-  return {id:t.id,channel_name:t.channel||'',program_name:t.program||'',episode_name:t.episodeName||'',episode_number:t.episodeNumber||'',title:t.title||'',owner_name:t.owner||'',status:t.status||'لم يبدأ',due:t.due||null,priority:t.priority||'Normal',notes:t.notes||'',delay_reason:t.delayReason||'',archived_from_tasks:!!t.archivedFromTasks,archived_at:t.archivedAt||null,delivered_at:t.deliveredAt||null,delivered_by:t.deliveredBy||'',delivered_upload_id:null,updated_at:new Date().toISOString()};
+  return {id:t.id,channel_name:t.channel||'',program_name:t.program||'',episode_name:t.episodeName||'',episode_number:t.episodeNumber||'',title:t.title||'',owner_name:t.owner||'',status:t.status||'لم يبدأ',due:t.due||null,priority:t.priority||'Normal',notes:t.notes||'',delay_reason:t.delayReason||'',archived_from_tasks:!!t.archivedFromTasks,archived_at:t.archivedAt||null,delivered_at:t.deliveredAt||null,delivered_by:t.deliveredBy||'',delivered_upload_id:null,updated_at:new Date().toISOString(),issue:t.issue||null,handover_history:Array.isArray(t.handoverHistory)?t.handoverHistory:[]};
 }
 function dbUploadToUi(u){
   return {id:u.id,name:u.name||'',channel:u.channel_name||'',program:u.program_name||'',episode:u.episode||'',by:u.by_name||'',taskId:u.task_id||'',taskTitle:u.task_title||'',link:u.link||'',githubPath:u.github_path||'',fileName:u.file_name||'',fileType:u.file_type||'',fileData:u.file_data||'',fileSize:u.file_size||0,notes:u.notes||'',createdAt:u.created_at||'',createdAtText:u.created_at?new Date(u.created_at).toLocaleString('ar-EG'):''};
@@ -343,7 +389,7 @@ function taskHtml(t, opts={}){
       </div>
       ${t.notes?`<div class="task-notes">${safe(t.notes)}</div>`:''}${delay}${myControls}${delivered}
     </div>
-    <div class="task-actions"><button data-action="edit-task" data-id="${safeAttr(t.id)}">تعديل</button><button class="done-btn" data-action="mark-done" data-id="${safeAttr(t.id)}">${done?'تم التسليم ✓':'علّم كمنتهي ✓'}</button>${hideBtn}</div>
+    <div class="task-actions"><button data-action="edit-task" data-id="${safeAttr(t.id)}">تعديل</button><button class="done-btn" data-action="mark-done" data-id="${safeAttr(t.id)}">${done?'تم التسليم ✓':'علّم كمنتهي ✓'}</button><button class="handover-btn" data-action="open-handover" data-id="${safeAttr(t.id)}">تسليم التاسك</button><button class="rise-hand-btn ${t.issue&&t.issue.status!=='resolved'?'active':''}" data-action="open-issue" data-id="${safeAttr(t.id)}">✋ Rise Hand</button>${hideBtn}</div>
   </div>`
 }
 
@@ -384,6 +430,12 @@ function openTaskDialog(ch,pr){fillSelects();$('#taskForm').reset();$('#taskId')
 function editTask(id){let t=state.tasks.find(x=>x.id===id); if(!t)return; fillSelects();$('#taskId').value=t.id;$('#taskChannel').value=t.channel;$('#taskProgram').value=t.program;$('#taskEpisodeName').value=t.episodeName||'';$('#taskEpisodeNumber').value=t.episodeNumber||'';$('#taskTitle').value=t.title;$('#taskOwner').value=t.owner;$('#taskStatus').value=t.status;$('#taskDue').value=t.due;$('#taskPriority').value=t.priority;$('#taskNotes').value=t.notes||'';$('#taskDelayReason').value=t.delayReason||''; const canDelay=canEditDelayReason(t); $('#taskDelayReason').readOnly=!canDelay; $('#taskDelayReason').title=canDelay?'':'سبب التأخير يتعدل فقط من حساب الشخص المسؤول عن التاسك'; $('#deleteTask').classList.remove('hidden');$('#deleteTask').textContent=isArchived(t)?'مخفي من التاسكات':'إخفاء من التاسكات';$('#deleteTask').disabled=isArchived(t);$('#dialogTitle').textContent='تعديل تاسك';$('#taskDialog').showModal()}
 async function saveTaskForm(e){e.preventDefault(); if(!isAdmin()) return alert('إنشاء أو تعديل التاسكات متاح للأدمن فقط.'); let id=$('#taskId').value||crypto.randomUUID();let old=state.tasks.find(x=>x.id===id)||{}; const isNew=!old.id; const formDelay=($('#taskDelayReason')?.value||'').trim(); let t={...old,id,channel:$('#taskChannel').value,program:$('#taskProgram').value,episodeName:$('#taskEpisodeName').value,episodeNumber:$('#taskEpisodeNumber').value,title:$('#taskTitle').value,owner:$('#taskOwner').value,status:$('#taskStatus').value,due:$('#taskDue').value,priority:$('#taskPriority').value,notes:$('#taskNotes').value,delayReason:(isNew ? '' : (canEditDelayReason(old) ? formDelay : (old.delayReason||''))),updatedAt:new Date().toISOString(),createdAt:old.createdAt||new Date().toISOString()};state.tasks=state.tasks.filter(x=>x.id!==id).concat(t); await logAction(isNew?'TASK_CREATE':'TASK_UPDATE', `${isNew?'إنشاء':'تعديل'} تاسك — المسؤول: ${t.owner} — التسليم: ${t.due} — الحالة: ${t.status}`, t.title); $('#taskDialog').close();await save()}
 async function archiveFromDialog(){ if(!isAdmin()) return alert('حذف التاسكات متاح للأدمن فقط.'); let id=$('#taskId').value;let t=state.tasks.find(x=>x.id===id);if(t){t.archivedFromTasks=true;t.archivedAt=new Date().toISOString();t.updatedAt=new Date().toISOString(); await logAction('TASK_ARCHIVE','إخفاء من نافذة تعديل التاسك', t.title);}$('#taskDialog').close();await save()}
+
+function openHandover(id){ const t=state.tasks.find(x=>x.id===id); if(!t) return; if(!userCanHandover(t)) return alert('تسليم التاسك متاح لصاحب التاسك أو الأدمن فقط.'); fillSelects(); $('#handoverTaskId').value=id; const names=getPeopleNames().filter(n=>n!==t.owner); $('#handoverTo').innerHTML=names.map(n=>`<option>${safe(n)}</option>`).join(''); $('#handoverNote').value=''; $('#handoverDialog').showModal(); }
+async function saveHandover(e){ e.preventDefault(); const id=$('#handoverTaskId').value; const t=state.tasks.find(x=>x.id===id); if(!t) return; if(!userCanHandover(t)) return alert('تسليم التاسك متاح لصاحب التاسك أو الأدمن فقط.'); const from=t.owner; const to=$('#handoverTo').value; const note=($('#handoverNote').value||'').trim(); if(!to || to===from) return alert('اختار حساب مختلف للتسليم.'); t.handoverHistory=Array.isArray(t.handoverHistory)?t.handoverHistory:[]; t.handoverHistory.unshift({from,to,note,by:currentUser()?.name||'Unknown',at:new Date().toISOString(),atText:new Date().toLocaleString('ar-EG')}); t.owner=to; t.updatedAt=new Date().toISOString(); notifyUser(to,'HANDOVER','تم تسليم تاسك لك',`${from} سلّم لك التاسك: ${t.title}${note?' — '+note:''}`,t.id); notifyAdmins('HANDOVER_ADMIN','تسليم تاسك',`${from} سلّم ${t.title} إلى ${to}`,t.id); await logAction('TASK_HANDOVER',`تسليم التاسك من ${from} إلى ${to}${note?' — '+note:''}`,t.title); $('#handoverDialog').close(); await save(); }
+function openIssue(id){ const t=state.tasks.find(x=>x.id===id); if(!t) return; if(!userCanRaiseIssue(t)) return alert('Rise Hand متاح لصاحب التاسك أو الأدمن فقط.'); $('#issueTaskId').value=id; const issue=t.issue||null; $('#issueText').value=issue?.text||''; $('#issueCurrent').classList.toggle('hidden',!issue); $('#issueCurrent').innerHTML=issue?`<b>آخر مشكلة:</b><p>${safe(issue.text||'')}</p><small>${safe(issue.by||'')} — ${safe(issue.atText||'')}</small><br><small>الحالة: ${safe(issue.status||'open')}</small>`:''; $('#resolveIssue').classList.toggle('hidden',!(isAdmin() && issue && issue.status!=='resolved')); $('#issueDialog').showModal(); }
+async function saveIssue(e){ e.preventDefault(); const id=$('#issueTaskId').value; const t=state.tasks.find(x=>x.id===id); if(!t) return; if(!userCanRaiseIssue(t)) return alert('Rise Hand متاح لصاحب التاسك أو الأدمن فقط.'); const text=($('#issueText').value||'').trim(); if(!text) return alert('اكتب المشكلة أولًا.'); const me=currentUser(); t.issue={text,by:me?.name||'Unknown',status:'open',at:new Date().toISOString(),atText:new Date().toLocaleString('ar-EG')}; t.updatedAt=new Date().toISOString(); notifyAdmins('ISSUE_RAISED','تم رفع مشكلة في تاسك',`${t.issue.by} كتب مشكلة في ${t.title}: ${text}`,t.id); await logAction('TASK_ISSUE_RAISED',`Rise Hand — ${text}`,t.title); $('#issueDialog').close(); await save(); }
+async function resolveIssue(){ const id=$('#issueTaskId').value; const t=state.tasks.find(x=>x.id===id); if(!t || !isAdmin()) return; if(t.issue){ t.issue.status='resolved'; t.issue.resolvedAt=new Date().toISOString(); t.issue.resolvedBy=currentUser()?.name||'Admin'; notifyUser(t.owner,'ISSUE_RESOLVED','تم إغلاق مشكلة التاسك',`تم إغلاق مشكلة: ${t.title}`,t.id); await logAction('TASK_ISSUE_RESOLVED','إغلاق مشكلة Rise Hand',t.title); } $('#issueDialog').close(); await save(); }
 function renderDaily(){let date=$('#dailyDate')?.value;let arr=activeTasks().filter(t=>t.due===date).sort((a,b)=>a.owner.localeCompare(b.owner));$('#dailyList').innerHTML=arr.length?arr.map(taskHtml).join(''):'<div class="panel">لا توجد تسليمات في هذا اليوم.</div>'}
 function renderCalendar(){ const wrap=$('#calendarGrid'); if(!wrap)return; const val=$('#calendarMonth').value||monthNow(); const [y,m]=val.split('-').map(Number); const first=new Date(y,m-1,1); const last=new Date(y,m,0); const startDay=(first.getDay()+6)%7; let html=''; for(let i=0;i<startDay;i++) html+='<div class="calendar-day empty"></div>'; for(let d=1; d<=last.getDate(); d++){ const date=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; const arr=state.tasks.filter(t=>t.due===date); html+=`<div class="calendar-day"><div class="day-number">${d}</div>${arr.map(t=>`<span class="mini-task ${isArchived(t)?'mini-archived':''}"><span data-action="edit-task" data-id="${safeAttr(t.id)}"><strong>${safe(t.title)}</strong>${safe(t.owner)} • ح${safe(t.episodeNumber||'-')} ${isArchived(t)?'• محفوظ بالكالندر':''}</span><button class="calendar-delete-btn" data-action="delete-calendar" data-id="${safeAttr(t.id)}" title="حذف نهائي من الكالندر">×</button></span>`).join('')}</div>`; } wrap.innerHTML=html; }
 function renderFlow(){ const box=$('#flowChart'); if(!box)return; const filter=$('#flowFilter').value; let channels=state.channels.filter(c=>!filter||c.name===filter); box.innerHTML=channels.map(ch=>`<div class="flow-channel"><h2>${safe(ch.name)}</h2><div class="flow-programs">${ch.programs.map(pr=>{const tasks=activeTasks().filter(t=>t.channel===ch.name&&t.program===pr); const episodes={}; tasks.forEach(t=>{const key=(t.episodeNumber||'-')+' — '+(t.episodeName||'بدون اسم حلقة'); episodes[key]??=[]; episodes[key].push(t);}); return `<div class="flow-program"><h3>${safe(pr)}</h3>${Object.keys(episodes).length?Object.keys(episodes).map(ep=>`<div class="flow-episode"><b>${safe(ep)}</b>${episodes[ep].map(t=>`<div class="flow-task">${safe(t.title)} → ${safe(t.owner)} • ${safe(t.status)}</div>`).join('')}</div>`).join(''):'<p class="muted">لا توجد حلقات/تاسكات بعد.</p>'}</div>`}).join('')}</div></div>`).join('') || '<div class="panel">لا توجد بيانات.</div>'; }
@@ -474,6 +526,7 @@ async function deleteUpload(id){
 }
 function renderLogs(){
   const box=$('#logsList'); if(!box) return;
+  if(!isAdmin()){ box.innerHTML=''; return; }
   const typeSel=$('#logTypeFilter');
   const logs=Array.isArray(state.logs)?state.logs:[];
   if(typeSel){
@@ -512,10 +565,20 @@ async function saveUploadForm(e){
   await logAction('UPLOAD_CREATE', `رفع ملف/رابط بواسطة ${item.by}${linkedTask?` وربطه بتاسك: ${linkedTask.title}`:''}`, item.name);
   $('#uploadDialog').close(); await save();
 }
-function renderAll(){state=normalizeState(state);syncPeopleFromUsers();renderChannels();fillSelects();renderDaily();renderCalendar();renderFlow();renderDrawer();renderTeam();renderStats();renderUploads();renderDeliveryAlerts();renderMyTasks();renderLogs();applyRolePermissions();}
+function renderAll(){state=normalizeState(state);syncPeopleFromUsers();renderChannels();fillSelects();renderDaily();renderCalendar();renderFlow();renderDrawer();renderTeam();renderStats();renderUploads();renderDeliveryAlerts();renderMyTasks();renderLogs();renderNotifications();renderChatBadge();applyRolePermissions();}
 function bindEvents(){
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>{$$('.nav-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');$$('.tab').forEach(t=>t.classList.remove('active'));$('#'+b.dataset.tab).classList.add('active');$('#pageTitle').textContent=b.textContent;renderAll()}));
   $('#indexBtn')?.addEventListener('click',()=>$('#drawer').classList.add('open'));
+  $('#chatBtn')?.addEventListener('click',openChat);
+  $('#closeChat')?.addEventListener('click',()=>$('#chatDialog')?.close());
+  $('#sendChatBtn')?.addEventListener('click',sendChat);
+  $('#chatInput')?.addEventListener('keydown',e=>{ if(e.key==='Enter') sendChat(); });
+  $('#closeNotifications')?.addEventListener('click',()=>$('#notificationDialog')?.close());
+  $('#cancelHandover')?.addEventListener('click',()=>$('#handoverDialog')?.close());
+  $('#saveHandover')?.addEventListener('click',saveHandover);
+  $('#cancelIssue')?.addEventListener('click',()=>$('#issueDialog')?.close());
+  $('#saveIssue')?.addEventListener('click',saveIssue);
+  $('#resolveIssue')?.addEventListener('click',resolveIssue);
   $('#closeDrawer')?.addEventListener('click',()=>$('#drawer').classList.remove('open'));
   ['filterPerson','filterStatus','searchInput','dailyDate','calendarMonth','flowFilter','logSearch','logTypeFilter'].forEach(id=>$('#'+id)?.addEventListener('input',renderAll));
   $('#todayBtn')?.addEventListener('click',()=>{$('#calendarMonth').value=monthNow();renderCalendar()});
@@ -558,6 +621,11 @@ function bindEvents(){
     if(a==='remove-person') await removePerson(el.dataset.name);
     if(a==='delete-upload') await deleteUpload(el.dataset.id);
     if(a==='open-profile') openProfileDialog();
+    if(a==='open-notifications') openNotifications();
+    if(a==='open-notification-task'){ $('#notificationDialog')?.close(); editTask(el.dataset.id); }
+    if(a==='open-handover') openHandover(el.dataset.id);
+    if(a==='open-issue') openIssue(el.dataset.id);
+    if(a==='select-chat'){ activeChatWith=el.dataset.name; renderChat(); }
   });
 }
 
@@ -617,7 +685,7 @@ function updateProfileBar(){
   const me=currentUser();
   if(!me){ bar.innerHTML=''; return; }
   const avatar=me.avatar?`<img src="${safeAttr(me.avatar)}" alt="Profile">`:`<span>${safe((me.nickname||me.name||'?').slice(0,1))}</span>`;
-  bar.innerHTML=`<button class="profile-bar-btn" data-action="open-profile" title="Edit Profile"><div class="profile-avatar">${avatar}</div><div><b>${safe(me.nickname||me.name)}</b><small>@${safe(me.username)} • ${safe(roleLabel(me.role))}</small></div></button>`;
+  bar.innerHTML=`<button class="notif-btn" data-action="open-notifications" title="الإشعارات">🔔<span id="notifBadge" class="mini-badge hidden">0</span></button><button class="profile-bar-btn" data-action="open-profile" title="Edit Profile"><div class="profile-avatar">${avatar}</div><div><b>${safe(me.nickname||me.name)}</b><small>@${safe(me.username)} • ${safe(roleLabel(me.role))}</small></div></button>`; renderNotifications();
 }
 function openProfileDialog(){
   const me=currentUser(); if(!me) return;

@@ -62,7 +62,7 @@
     </section>
 
     <section id="uploads" class="tab">
-      <div class="section-head"><h2>المرفوعات</h2><button id="openUploadDialog">+ إضافة مرفوع</button></div>
+      <div class="section-head"><h2>المرفوعات</h2><button id="openUploadDialog">تسليم التاسك</button></div>
       <div id="uploadsList" class="upload-grid"></div>
     </section>
 
@@ -91,6 +91,7 @@
   </main>
 
   <button class="floating-index" id="indexBtn" title="فهرس التاسكات">☰</button>
+  <button class="floating-chat" id="chatBtn" title="شات الحسابات">💬<span id="chatBadge" class="mini-badge hidden">0</span></button>
   <aside class="drawer" id="drawer">
     <div class="drawer-head"><h2>فهرس التاسكات</h2><button id="closeDrawer">×</button></div>
     <div class="filters"><select id="filterPerson"><option value="">كل الفريق</option></select><select id="filterStatus"><option value="">كل الحالات</option></select></div>
@@ -124,7 +125,7 @@
 
   <dialog id="uploadDialog">
     <form method="dialog" id="uploadForm">
-      <h2>إضافة مرفوع</h2>
+      <h2>تسليم التاسك</h2>
       <label>اسم الرفع<input id="uploadName" required placeholder="مثال: حلقة 01 VO Final" /></label>
       <div class="two-col">
         <label>القناة<select id="uploadChannel" required></select></label>
@@ -139,7 +140,7 @@
       <label>رابط Drive / YouTube / GitHub<input id="uploadLink" placeholder="اختياري" /></label>
       <label>ملف للرفع إلى GitHub<input id="uploadFile" type="file" /></label>
       <label>ملاحظات<textarea id="uploadNotes" rows="3"></textarea></label>
-      <div class="dialog-actions"><span></span><button type="button" id="cancelUpload">إلغاء</button><button id="saveUpload">حفظ المرفوع</button></div>
+      <div class="dialog-actions"><span></span><button type="button" id="cancelUpload">إلغاء</button><button id="saveUpload">حفظ التسليم</button></div>
     </form>
   </dialog>
 
@@ -179,6 +180,51 @@
       </div>
       <div class="dialog-actions"><span></span><button type="button" id="cancelProfile">إلغاء</button><button id="saveProfile">حفظ البروفايل</button></div>
     </form>
+  </dialog>
+
+
+  <dialog id="notificationDialog">
+    <div class="dialog-panel no-form-dialog">
+      <div class="drawer-head"><h2>الإشعارات</h2><button id="closeNotifications">×</button></div>
+      <div id="notificationsList" class="notifications-list"></div>
+    </div>
+  </dialog>
+
+  <dialog id="handoverDialog">
+    <form method="dialog" id="handoverForm">
+      <h2>تسليم التاسك</h2>
+      <input type="hidden" id="handoverTaskId" />
+      <label>تسليم إلى<select id="handoverTo" required></select></label>
+      <label>ملاحظة التسليم<textarea id="handoverNote" rows="4" placeholder="اكتب ملاحظة اختيارية عن التسليم..."></textarea></label>
+      <div class="dialog-actions"><span></span><button type="button" id="cancelHandover">إلغاء</button><button id="saveHandover">تسليم</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="issueDialog">
+    <form method="dialog" id="issueForm">
+      <h2>Rise Hand — مشكلة في التاسك</h2>
+      <input type="hidden" id="issueTaskId" />
+      <div id="issueCurrent" class="issue-current hidden"></div>
+      <label>المشكلة<textarea id="issueText" rows="5" placeholder="اكتب المشكلة بوضوح..." required></textarea></label>
+      <div class="dialog-actions"><button type="button" id="resolveIssue" class="danger hidden">إغلاق المشكلة</button><span></span><button type="button" id="cancelIssue">إلغاء</button><button id="saveIssue">حفظ المشكلة</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="chatDialog">
+    <div class="dialog-panel no-form-dialog chat-dialog-panel">
+      <div class="drawer-head"><h2>شات الحسابات</h2><button id="closeChat">×</button></div>
+      <div class="chat-layout">
+        <div id="chatUsers" class="chat-users"></div>
+        <div class="chat-room">
+          <div id="chatRoomTitle" class="chat-room-title">اختر حساب للمحادثة</div>
+          <div id="chatMessages" class="chat-messages"></div>
+          <div class="chat-compose">
+            <input id="chatInput" placeholder="اكتب رسالة..." />
+            <button id="sendChatBtn" type="button">إرسال</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </dialog>
 
 <div id="loginOverlay" class="login-overlay">
