@@ -50,6 +50,7 @@ function notifyUser(to, type, title, body='', taskId=''){
   state.notifications.unshift({id:crypto.randomUUID?.()||String(Date.now()+Math.random()),to,type,title,body,taskId,read:false,createdAt:new Date().toISOString(),createdAtText:new Date().toLocaleString('ar-EG')});
   state.notifications = state.notifications.slice(0,500);
   localSave();
+  try{ if(hasGithubConfig()) apiUpsertById('notifications', uiNotificationToDb(state.notifications[0])).catch(err=>console.warn('direct notification persist failed',err)); }catch(err){}
   renderNotifications?.();
 }
 function notifyAdmins(type,title,body='',taskId=''){
@@ -68,7 +69,15 @@ function renderNotifications(){
     return `<div class="notification-card ${n.read?'read':''}"><div class="notification-row"><div><b>${safe(n.title||'إشعار')}</b><small>${safe(n.createdAtText||'')}</small></div>${issueBtn}</div><p>${safe(n.body||'')}</p>${n.taskId?`<button data-action="open-notification-task" data-id="${safeAttr(n.taskId)}">فتح التاسك</button>`:''}</div>`;
   }).join(''):'<div class="panel">لا توجد إشعارات.</div>';
 }
-function openNotifications(){ (state.notifications||[]).forEach(n=>{ const me=currentUser(); if(me && (n.to===me.name || n.to===me.username)) n.read=true; }); localSave(); renderNotifications(); $('#notificationDialog')?.showModal(); }
+function openNotifications(){
+  const me=currentUser();
+  const changed=[];
+  (state.notifications||[]).forEach(n=>{ if(me && (n.to===me.name || n.to===me.username) && !n.read){ n.read=true; changed.push(n); } });
+  localSave();
+  changed.forEach(n=>apiPatchById('notifications',n.id,{read:true}).catch(()=>{}));
+  renderNotifications();
+  $('#notificationDialog')?.showModal();
+}
 function chatUnreadCount(){ const me=currentUser(); if(!me) return 0; return (state.chats||[]).filter(m=>m.to===me.name && !m.read).length; }
 function renderChatBadge(){ const b=$('#chatBadge'); if(!b) return; const c=chatUnreadCount(); b.textContent=c; b.classList.toggle('hidden',!c); }
 let activeChatWith='';
@@ -78,7 +87,11 @@ function renderChat(){
   const users=normalizeUsers(state.users).filter(u=>u.isActive!==false && u.name!==me.name);
   $('#chatUsers').innerHTML=users.map(u=>{const unread=(state.chats||[]).filter(m=>m.from===u.name&&m.to===me.name&&!m.read).length;return `<button class="chat-user ${activeChatWith===u.name?'active':''}" data-action="select-chat" data-name="${safeAttr(u.name)}"><span>${safe(u.nickname||u.name)}</span>${unread?`<em>${unread}</em>`:''}</button>`}).join('')||'<div class="panel">لا توجد حسابات.</div>';
   $('#chatRoomTitle').textContent=activeChatWith?`محادثة مع ${activeChatWith}`:'اختر حساب للمحادثة';
-  if(activeChatWith){ (state.chats||[]).forEach(m=>{ if(m.from===activeChatWith && m.to===me.name) m.read=true; }); localSave(); }
+  if(activeChatWith){
+    const changed=[];
+    (state.chats||[]).forEach(m=>{ if(m.from===activeChatWith && m.to===me.name && !m.read){ m.read=true; changed.push(m); } });
+    if(changed.length){ localSave(); changed.forEach(m=>apiPatchById('messages',m.id,{read:true}).catch(()=>{})); }
+  }
   const msgs=activeChatWith?chatBetween(activeChatWith):[];
   $('#chatMessages').innerHTML=msgs.map(m=>`<div class="chat-msg ${m.from===me.name?'mine':'theirs'}"><b>${safe(m.from)}</b><p>${safe(m.text)}</p><small>${safe(m.createdAtText||'')}</small></div>`).join('') || '<div class="muted chat-empty">لا توجد رسائل بعد.</div>';
   renderChatBadge();
@@ -94,6 +107,8 @@ async function sendChat(){
   state.chats=Array.isArray(state.chats)?state.chats:[];
   const msg={id:crypto.randomUUID?.()||String(Date.now()+Math.random()),from:me.name,to:activeChatWith,text,read:false,createdAt:new Date().toISOString(),createdAtText:new Date().toLocaleString('ar-EG')};
   state.chats.push(msg);
+  localSave();
+  try{ await apiUpsertById('messages', uiChatToDb(msg)); }catch(err){ console.warn('direct chat persist failed', err); }
   if(input) input.value='';
   notifyUser(activeChatWith,'CHAT','رسالة شات جديدة',`${me.name}: ${text}`,'');
   try{ await logAction('CHAT_MESSAGE',`رسالة شات من ${me.name} إلى ${activeChatWith}`,activeChatWith); }catch(err){ console.warn('chat log failed',err); }
@@ -213,6 +228,106 @@ async function apiPost(table, payload, prefer='return=representation'){
   return await res.json().catch(()=>[]);
 }
 
+async function apiPatchById(table, id, payload){
+  if(!id) return [];
+  const res=await fetch(apiBase()+table+'?id=eq.'+encodeURIComponent(id),{method:'PATCH',headers:apiHeaders({'Prefer':'return=representation'}),body:JSON.stringify(payload)});
+  if(!res.ok) throw new Error(table+' PATCH '+res.status+': '+await res.text());
+  return await res.json().catch(()=>[]);
+}
+async function apiUpsertById(table, payload){
+  const rows=Array.isArray(payload)?payload:[payload];
+  if(!rows.length) return [];
+  const res=await fetch(apiBase()+table+'?on_conflict=id',{
+    method:'POST',
+    headers:apiHeaders({'Prefer':'resolution=merge-duplicates,return=representation'}),
+    body:JSON.stringify(rows)
+  });
+  if(!res.ok) throw new Error(table+' UPSERT '+res.status+': '+await res.text());
+  return await res.json().catch(()=>[]);
+}
+function uiNotificationToDb(n){
+  return {
+    id:n.id,
+    to_name:n.to||'',
+    type:n.type||'INFO',
+    title:n.title||'',
+    body:n.body||'',
+    task_id:n.taskId||null,
+    read:!!n.read,
+    created_at:n.createdAt||new Date().toISOString()
+  };
+}
+function dbNotificationToUi(n){
+  const created=n.created_at||new Date().toISOString();
+  return {id:n.id,to:n.to_name||n.to||'',type:n.type||'INFO',title:n.title||'',body:n.body||'',taskId:n.task_id||'',read:!!n.read,createdAt:created,createdAtText:new Date(created).toLocaleString('ar-EG')};
+}
+function uiChatToDb(m){
+  return {id:m.id,from_name:m.from||'',to_name:m.to||'',text:m.text||'',read:!!m.read,created_at:m.createdAt||new Date().toISOString()};
+}
+function dbChatToUi(m){
+  const created=m.created_at||new Date().toISOString();
+  return {id:m.id,from:m.from_name||m.from||'',to:m.to_name||m.to||'',text:m.text||'',read:!!m.read,createdAt:created,createdAtText:new Date(created).toLocaleString('ar-EG')};
+}
+async function saveNotificationsOnline(){
+  if(!hasGithubConfig()) return;
+  const rows=(state.notifications||[]).map(uiNotificationToDb).filter(r=>r.id && r.to_name);
+  if(rows.length) await apiUpsertById('notifications', rows);
+}
+async function saveChatsOnline(){
+  if(!hasGithubConfig()) return;
+  const rows=(state.chats||[]).map(uiChatToDb).filter(r=>r.id && r.from_name && r.to_name);
+  if(rows.length) await apiUpsertById('messages', rows);
+}
+async function loadNotificationsAndChatsOnline(){
+  if(!hasGithubConfig()) return;
+  let changed=false;
+  try{
+    const notifications=await apiGet('notifications','?select=*&order=created_at.desc&limit=500');
+    state.notifications=notifications.map(dbNotificationToUi);
+    changed=true;
+  }catch(e){ console.warn('notifications realtime/load not ready', e); }
+  try{
+    const messages=await apiGet('messages','?select=*&order=created_at.asc&limit=2000');
+    state.chats=messages.map(dbChatToUi);
+    changed=true;
+  }catch(e){ console.warn('messages realtime/load not ready', e); }
+  if(changed){
+    localSave();
+    renderNotifications?.();
+    renderChatBadge?.();
+    if($('#chatDialog')?.open) renderChat?.();
+  }
+}
+let brivviantRealtimeClient=null;
+let brivviantRealtimeStarted=false;
+let brivviantRealtimePoll=null;
+function startRealtimeSync(){
+  if(brivviantRealtimeStarted || !hasGithubConfig()) return;
+  brivviantRealtimeStarted=true;
+  const refresh=()=>loadNotificationsAndChatsOnline().catch(err=>console.warn('realtime refresh failed',err));
+  // Fallback ثابت: حتى لو Supabase Realtime مش متفعل، الشات والتنبيهات هتظهر تلقائيًا بدون Refresh.
+  clearInterval(brivviantRealtimePoll);
+  brivviantRealtimePoll=setInterval(refresh, 3000);
+  refresh();
+  try{
+    if(!window.supabase || !window.supabase.createClient){
+      console.warn('Supabase realtime library missing - polling fallback is active');
+      return;
+    }
+    brivviantRealtimeClient=window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+    brivviantRealtimeClient
+      .channel('brivviant-chat-notification-live')
+      .on('postgres_changes',{event:'*',schema:'public',table:'notifications'},refresh)
+      .on('postgres_changes',{event:'*',schema:'public',table:'messages'},refresh)
+      .subscribe(status=>{
+        console.log('Brivviant Realtime:',status);
+        if(status==='SUBSCRIBED') setSync('Realtime Connected');
+      });
+  }catch(err){
+    console.warn('Supabase realtime failed - polling fallback is active', err);
+  }
+}
+
 async function apiUpsertPeople(payload){
   const res=await fetch(apiBase()+'people?on_conflict=name',{
     method:'POST',
@@ -250,6 +365,14 @@ async function loadOnline(){
     state.tasks=tasks.map(dbTaskToUi);
     state.uploads=uploads.map(dbUploadToUi);
     state.logs=logs.map(dbLogToUi);
+    try{
+      const notifications=await apiGet('notifications','?select=*&order=created_at.desc&limit=500');
+      state.notifications=notifications.map(dbNotificationToUi);
+    }catch(notifErr){ console.warn('notifications table not ready', notifErr); state.notifications=state.notifications||[]; }
+    try{
+      const messages=await apiGet('messages','?select=*&order=created_at.asc&limit=2000');
+      state.chats=messages.map(dbChatToUi);
+    }catch(msgErr){ console.warn('messages table not ready', msgErr); state.chats=state.chats||[]; }
     localSave();
     setSync('Loaded From Supabase Tables');
     renderAll();
@@ -290,6 +413,8 @@ async function saveOnline(){
     if(taskRows.length) await apiPost('tasks',taskRows,'return=representation');
     const uploadRows=current.uploads.map(uiUploadToDb);
     if(uploadRows.length) await apiPost('uploads',uploadRows,'return=representation');
+    try{ await saveNotificationsOnline(); }catch(notifErr){ console.warn('notifications save skipped', notifErr); }
+    try{ await saveChatsOnline(); }catch(chatErr){ console.warn('messages save skipped', chatErr); }
 
     setSync('Saved To Supabase Tables');
   }catch(e){
@@ -828,6 +953,7 @@ async function boot(){
   $('#savePasswordChangeBtn')?.addEventListener('click',savePasswordChange);
   $('#cancelPasswordChangeBtn')?.addEventListener('click',()=>$('#passwordChangePanel')?.classList.add('hidden'));
   await initOnline();
+  startRealtimeSync();
   await ensureDefaultAdmin();
   const session=currentSession();
   if(session && normalizeUsers(state.users).some(u=>u.username===session.username && u.isActive!==false)) $('#loginOverlay').style.display='none';
