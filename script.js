@@ -62,7 +62,11 @@ function renderNotifications(){
   const badge=$('#notifBadge'); if(badge){ badge.textContent=count; badge.classList.toggle('hidden',!count); }
   const list=$('#notificationsList'); if(!list) return;
   const arr=myNotifications();
-  list.innerHTML=arr.length?arr.map(n=>`<div class="notification-card ${n.read?'read':''}"><b>${safe(n.title||'إشعار')}</b><small>${safe(n.createdAtText||'')}</small><p>${safe(n.body||'')}</p>${n.taskId?`<button data-action="open-notification-task" data-id="${safeAttr(n.taskId)}">فتح التاسك</button>`:''}</div>`).join(''):'<div class="panel">لا توجد إشعارات.</div>';
+  list.innerHTML=arr.length?arr.map(n=>{
+    const t=n.taskId ? state.tasks.find(x=>x.id===n.taskId) : null;
+    const issueBtn=(t && t.issue && t.issue.status!=='resolved') ? `<button class="notification-issue-btn" data-action="open-issue" data-id="${safeAttr(t.id)}" title="عرض مشكلة Rise Hand">✋</button>` : '';
+    return `<div class="notification-card ${n.read?'read':''}"><div class="notification-row"><div><b>${safe(n.title||'إشعار')}</b><small>${safe(n.createdAtText||'')}</small></div>${issueBtn}</div><p>${safe(n.body||'')}</p>${n.taskId?`<button data-action="open-notification-task" data-id="${safeAttr(n.taskId)}">فتح التاسك</button>`:''}</div>`;
+  }).join(''):'<div class="panel">لا توجد إشعارات.</div>';
 }
 function openNotifications(){ (state.notifications||[]).forEach(n=>{ const me=currentUser(); if(me && (n.to===me.name || n.to===me.username)) n.read=true; }); localSave(); renderNotifications(); $('#notificationDialog')?.showModal(); }
 function chatUnreadCount(){ const me=currentUser(); if(!me) return 0; return (state.chats||[]).filter(m=>m.to===me.name && !m.read).length; }
@@ -364,6 +368,9 @@ function taskHtml(t, opts={}){
   const done=isDone(t), late=isLate(t), dueNow=isDueToday(t);
   const dueLabel=t.due ? new Date(t.due+'T00:00:00').toLocaleDateString('ar-EG') : '-';
   const delivered=t.deliveredAt?`<div class="task-delivered">✓ تم رفع التسليم بواسطة ${safe(t.deliveredBy||t.owner)} — ${safe(new Date(t.deliveredAt).toLocaleString('ar-EG',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}))}</div>`:'';
+  const handovers=Array.isArray(t.handoverHistory)?t.handoverHistory:[];
+  const lastHandover=handovers[0];
+  const handoverInfo=lastHandover?`<div class="handover-trace"><b>مسار التسليم:</b> ${safe(lastHandover.to)} استلم من ${safe(lastHandover.from)} <span>في مرحلة: ${safe(lastHandover.stage||t.status||'-')}</span><small>${safe(lastHandover.atText||'')}${lastHandover.note?' — '+safe(lastHandover.note):''}</small></div>`:'';
   const canEditDelay=canEditDelayReason(t);
   const isMineView=!!opts.myTasks;
   const delay=late ? `<div class="delay-note locked-delay">سبب التأخير الحالي: ${safe(t.delayReason||'لم يتم كتابة سبب التأخير بعد')}</div>` : '';
@@ -387,7 +394,7 @@ function taskHtml(t, opts={}){
         <span><em>Priority</em>${safe(t.priority||'-')}</span>
         ${flags}
       </div>
-      ${t.notes?`<div class="task-notes">${safe(t.notes)}</div>`:''}${delay}${myControls}${delivered}
+      ${t.notes?`<div class="task-notes">${safe(t.notes)}</div>`:''}${handoverInfo}${delay}${myControls}${delivered}
     </div>
     <div class="task-actions"><button data-action="edit-task" data-id="${safeAttr(t.id)}">تعديل</button><button class="done-btn" data-action="mark-done" data-id="${safeAttr(t.id)}">${done?'تم التسليم ✓':'علّم كمنتهي ✓'}</button><button class="handover-btn" data-action="open-handover" data-id="${safeAttr(t.id)}">تسليم التاسك</button><button class="rise-hand-btn ${t.issue&&t.issue.status!=='resolved'?'active':''}" data-action="open-issue" data-id="${safeAttr(t.id)}">✋ Rise Hand</button>${hideBtn}</div>
   </div>`
@@ -432,15 +439,50 @@ async function saveTaskForm(e){e.preventDefault(); if(!isAdmin()) return alert('
 async function archiveFromDialog(){ if(!isAdmin()) return alert('حذف التاسكات متاح للأدمن فقط.'); let id=$('#taskId').value;let t=state.tasks.find(x=>x.id===id);if(t){t.archivedFromTasks=true;t.archivedAt=new Date().toISOString();t.updatedAt=new Date().toISOString(); await logAction('TASK_ARCHIVE','إخفاء من نافذة تعديل التاسك', t.title);}$('#taskDialog').close();await save()}
 
 function openHandover(id){ const t=state.tasks.find(x=>x.id===id); if(!t) return; if(!userCanHandover(t)) return alert('تسليم التاسك متاح لصاحب التاسك أو الأدمن فقط.'); fillSelects(); $('#handoverTaskId').value=id; const names=getPeopleNames().filter(n=>n!==t.owner); $('#handoverTo').innerHTML=names.map(n=>`<option>${safe(n)}</option>`).join(''); $('#handoverNote').value=''; $('#handoverDialog').showModal(); }
-async function saveHandover(e){ e.preventDefault(); const id=$('#handoverTaskId').value; const t=state.tasks.find(x=>x.id===id); if(!t) return; if(!userCanHandover(t)) return alert('تسليم التاسك متاح لصاحب التاسك أو الأدمن فقط.'); const from=t.owner; const to=$('#handoverTo').value; const note=($('#handoverNote').value||'').trim(); if(!to || to===from) return alert('اختار حساب مختلف للتسليم.'); t.handoverHistory=Array.isArray(t.handoverHistory)?t.handoverHistory:[]; t.handoverHistory.unshift({from,to,note,by:currentUser()?.name||'Unknown',at:new Date().toISOString(),atText:new Date().toLocaleString('ar-EG')}); t.owner=to; t.updatedAt=new Date().toISOString(); notifyUser(to,'HANDOVER','تم تسليم تاسك لك',`${from} سلّم لك التاسك: ${t.title}${note?' — '+note:''}`,t.id); notifyAdmins('HANDOVER_ADMIN','تسليم تاسك',`${from} سلّم ${t.title} إلى ${to}`,t.id); await logAction('TASK_HANDOVER',`تسليم التاسك من ${from} إلى ${to}${note?' — '+note:''}`,t.title); $('#handoverDialog').close(); await save(); }
-function openIssue(id){ const t=state.tasks.find(x=>x.id===id); if(!t) return; if(!userCanRaiseIssue(t)) return alert('Rise Hand متاح لصاحب التاسك أو الأدمن فقط.'); $('#issueTaskId').value=id; const issue=t.issue||null; $('#issueText').value=issue?.text||''; $('#issueCurrent').classList.toggle('hidden',!issue); $('#issueCurrent').innerHTML=issue?`<b>آخر مشكلة:</b><p>${safe(issue.text||'')}</p><small>${safe(issue.by||'')} — ${safe(issue.atText||'')}</small><br><small>الحالة: ${safe(issue.status||'open')}</small>`:''; $('#resolveIssue').classList.toggle('hidden',!(isAdmin() && issue && issue.status!=='resolved')); $('#issueDialog').showModal(); }
-async function saveIssue(e){ e.preventDefault(); const id=$('#issueTaskId').value; const t=state.tasks.find(x=>x.id===id); if(!t) return; if(!userCanRaiseIssue(t)) return alert('Rise Hand متاح لصاحب التاسك أو الأدمن فقط.'); const text=($('#issueText').value||'').trim(); if(!text) return alert('اكتب المشكلة أولًا.'); const me=currentUser(); t.issue={text,by:me?.name||'Unknown',status:'open',at:new Date().toISOString(),atText:new Date().toLocaleString('ar-EG')}; t.updatedAt=new Date().toISOString(); notifyAdmins('ISSUE_RAISED','تم رفع مشكلة في تاسك',`${t.issue.by} كتب مشكلة في ${t.title}: ${text}`,t.id); await logAction('TASK_ISSUE_RAISED',`Rise Hand — ${text}`,t.title); $('#issueDialog').close(); await save(); }
+async function saveHandover(e){ e.preventDefault(); const id=$('#handoverTaskId').value; const t=state.tasks.find(x=>x.id===id); if(!t) return; if(!userCanHandover(t)) return alert('تسليم التاسك متاح لصاحب التاسك أو الأدمن فقط.'); const from=t.owner; const to=$('#handoverTo').value; const note=($('#handoverNote').value||'').trim(); if(!to || to===from) return alert('اختار حساب مختلف للتسليم.'); t.handoverHistory=Array.isArray(t.handoverHistory)?t.handoverHistory:[]; t.handoverHistory.unshift({from,to,note,stage:t.status||'غير محدد',by:currentUser()?.name||'Unknown',at:new Date().toISOString(),atText:new Date().toLocaleString('ar-EG')}); t.owner=to; t.updatedAt=new Date().toISOString(); notifyUser(to,'HANDOVER','تم تسليم تاسك لك',`${from} سلّم لك التاسك: ${t.title}${note?' — '+note:''}`,t.id); notifyAdmins('HANDOVER_ADMIN','تسليم تاسك',`${from} سلّم ${t.title} إلى ${to}`,t.id); await logAction('TASK_HANDOVER',`تسليم التاسك من ${from} إلى ${to}${note?' — '+note:''}`,t.title); $('#handoverDialog').close(); await save(); }
+function canViewIssue(t){ const me=currentUser(); if(!t) return false; if(isAdmin()) return true; if(t.owner===me?.name) return true; if(t.issue && t.issue.by===me?.name) return true; return false; }
+function canEditIssue(t){ const me=currentUser(); if(!t) return false; if(isAdmin()) return true; if(!t.issue) return t.owner===me?.name; return t.issue.by===me?.name; }
+function openIssue(id){
+  const t=state.tasks.find(x=>x.id===id); if(!t) return;
+  if(t.issue && !canViewIssue(t)) return alert('عرض المشكلة متاح لصاحب المشكلة وصاحب التاسك والأدمن فقط.');
+  if(!t.issue && !userCanRaiseIssue(t)) return alert('Rise Hand متاح لصاحب التاسك أو الأدمن فقط.');
+  $('#issueTaskId').value=id; const issue=t.issue||null; const editable=canEditIssue(t);
+  $('#issueText').value=issue?.text||'';
+  $('#issueText').disabled=!editable;
+  $('#saveIssue').classList.toggle('hidden',!editable);
+  $('#issueCurrent').classList.toggle('hidden',!issue);
+  $('#issueCurrent').innerHTML=issue?`<b>المشكلة المرفوعة:</b><p>${safe(issue.text||'')}</p><small>كتبها: ${safe(issue.by||'')} — ${safe(issue.atText||'')}</small><br><small>الحالة: ${safe(issue.status||'open')}</small>`:'';
+  $('#resolveIssue').classList.toggle('hidden',!(isAdmin() && issue && issue.status!=='resolved'));
+  $('#issueDialog').showModal();
+}
+async function saveIssue(e){
+  e.preventDefault(); const id=$('#issueTaskId').value; const t=state.tasks.find(x=>x.id===id); if(!t) return;
+  if(!canEditIssue(t)) return alert('تعديل مشكلة Rise Hand متاح فقط للشخص اللي كتبها أو الأدمن.');
+  const text=($('#issueText').value||'').trim(); if(!text) return alert('اكتب المشكلة أولًا.');
+  const me=currentUser(); const oldBy=t.issue?.by; const isNew=!t.issue;
+  t.issue={...(t.issue||{}),text,by:oldBy||me?.name||'Unknown',status:'open',at:t.issue?.at||new Date().toISOString(),atText:t.issue?.atText||new Date().toLocaleString('ar-EG'),updatedAt:new Date().toISOString(),updatedBy:me?.name||'Unknown'};
+  t.updatedAt=new Date().toISOString();
+  if(isNew) notifyAdmins('ISSUE_RAISED','تم رفع مشكلة في تاسك',`${t.issue.by} كتب مشكلة في ${t.title}: ${text}`,t.id);
+  else notifyAdmins('ISSUE_UPDATED','تم تعديل مشكلة في تاسك',`${me?.name||'Unknown'} عدّل مشكلة ${t.title}: ${text}`,t.id);
+  await logAction(isNew?'TASK_ISSUE_RAISED':'TASK_ISSUE_UPDATED',`Rise Hand — ${text}`,t.title); $('#issueDialog').close(); await save();
+}
 async function resolveIssue(){ const id=$('#issueTaskId').value; const t=state.tasks.find(x=>x.id===id); if(!t || !isAdmin()) return; if(t.issue){ t.issue.status='resolved'; t.issue.resolvedAt=new Date().toISOString(); t.issue.resolvedBy=currentUser()?.name||'Admin'; notifyUser(t.owner,'ISSUE_RESOLVED','تم إغلاق مشكلة التاسك',`تم إغلاق مشكلة: ${t.title}`,t.id); await logAction('TASK_ISSUE_RESOLVED','إغلاق مشكلة Rise Hand',t.title); } $('#issueDialog').close(); await save(); }
 function renderDaily(){let date=$('#dailyDate')?.value;let arr=activeTasks().filter(t=>t.due===date).sort((a,b)=>a.owner.localeCompare(b.owner));$('#dailyList').innerHTML=arr.length?arr.map(taskHtml).join(''):'<div class="panel">لا توجد تسليمات في هذا اليوم.</div>'}
 function renderCalendar(){ const wrap=$('#calendarGrid'); if(!wrap)return; const val=$('#calendarMonth').value||monthNow(); const [y,m]=val.split('-').map(Number); const first=new Date(y,m-1,1); const last=new Date(y,m,0); const startDay=(first.getDay()+6)%7; let html=''; for(let i=0;i<startDay;i++) html+='<div class="calendar-day empty"></div>'; for(let d=1; d<=last.getDate(); d++){ const date=`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; const arr=state.tasks.filter(t=>t.due===date); html+=`<div class="calendar-day"><div class="day-number">${d}</div>${arr.map(t=>`<span class="mini-task ${isArchived(t)?'mini-archived':''}"><span data-action="edit-task" data-id="${safeAttr(t.id)}"><strong>${safe(t.title)}</strong>${safe(t.owner)} • ح${safe(t.episodeNumber||'-')} ${isArchived(t)?'• محفوظ بالكالندر':''}</span><button class="calendar-delete-btn" data-action="delete-calendar" data-id="${safeAttr(t.id)}" title="حذف نهائي من الكالندر">×</button></span>`).join('')}</div>`; } wrap.innerHTML=html; }
 function renderFlow(){ const box=$('#flowChart'); if(!box)return; const filter=$('#flowFilter').value; let channels=state.channels.filter(c=>!filter||c.name===filter); box.innerHTML=channels.map(ch=>`<div class="flow-channel"><h2>${safe(ch.name)}</h2><div class="flow-programs">${ch.programs.map(pr=>{const tasks=activeTasks().filter(t=>t.channel===ch.name&&t.program===pr); const episodes={}; tasks.forEach(t=>{const key=(t.episodeNumber||'-')+' — '+(t.episodeName||'بدون اسم حلقة'); episodes[key]??=[]; episodes[key].push(t);}); return `<div class="flow-program"><h3>${safe(pr)}</h3>${Object.keys(episodes).length?Object.keys(episodes).map(ep=>`<div class="flow-episode"><b>${safe(ep)}</b>${episodes[ep].map(t=>`<div class="flow-task">${safe(t.title)} → ${safe(t.owner)} • ${safe(t.status)}</div>`).join('')}</div>`).join(''):'<p class="muted">لا توجد حلقات/تاسكات بعد.</p>'}</div>`}).join('')}</div></div>`).join('') || '<div class="panel">لا توجد بيانات.</div>'; }
 function renderDrawer(){let p=$('#filterPerson')?.value||'',s=$('#filterStatus')?.value||'',q=$('#searchInput')?.value.trim()||'';let arr=activeTasks().filter(t=>(!p||t.owner===p)&&(!s||t.status===s)&&(!q||JSON.stringify(t).includes(q))).sort((a,b)=>(a.due||'').localeCompare(b.due||''));$('#drawerTasks').innerHTML=arr.length?arr.map(taskHtml).join(''):'<p>لا توجد نتائج.</p>'}
-function renderDeliveryAlerts(){ const box=$('#deliveryAlerts'); if(!box)return; const names=getPeopleNames(); if(!names.length){ box.innerHTML='<div class="alert-card green">لا يوجد أعضاء فريق بعد.</div>'; return; } box.innerHTML=names.map(p=>{ const tasks=activeTasks().filter(t=>t.owner===p); const todayTasks=tasks.filter(isDueToday); const lateTasks=tasks.filter(isLate); const cls=lateTasks.length?'red':(todayTasks.length?'orange':'green'); const reason=lateTasks.slice(0,2).map(t=>`${safe(t.title)}: ${safe(t.delayReason||'لم يكتب سبب التأخير')}`).join('<br>'); return `<div class="alert-card ${cls}"><div class="alert-name">${safe(p)}</div><div class="alert-counts"><span>اليوم: ${todayTasks.length}</span><span>متأخر: ${lateTasks.length}</span></div>${lateTasks.length?`<small>${reason}</small>`:'<small>لا توجد مشاكل تسليم.</small>'}</div>`; }).join(''); }
+function renderDeliveryAlerts(){
+  const box=$('#deliveryAlerts'); if(!box)return; const names=getPeopleNames();
+  if(!names.length){ box.innerHTML='<div class="alert-card green">لا يوجد أعضاء فريق بعد.</div>'; return; }
+  box.innerHTML=names.map(p=>{
+    const tasks=activeTasks().filter(t=>t.owner===p); const todayTasks=tasks.filter(isDueToday); const lateTasks=tasks.filter(isLate);
+    const issueTasks=tasks.filter(t=>t.issue && t.issue.status!=='resolved');
+    const cls=lateTasks.length?'red':(todayTasks.length?'orange':'green');
+    const reason=lateTasks.slice(0,2).map(t=>`${safe(t.title)}: ${safe(t.delayReason||'لم يكتب سبب التأخير')}`).join('<br>');
+    const issueIcons=issueTasks.map(t=>`<button class="delivery-issue-icon" data-action="open-issue" data-id="${safeAttr(t.id)}" title="Rise Hand: ${safeAttr(t.title)}">✋</button>`).join('');
+    return `<div class="alert-card ${cls}"><div class="alert-name alert-name-row"><span>${safe(p)}</span>${issueIcons?`<span class="alert-issue-icons">${issueIcons}</span>`:''}</div><div class="alert-counts"><span>اليوم: ${todayTasks.length}</span><span>متأخر: ${lateTasks.length}</span></div>${lateTasks.length?`<small>${reason}</small>`:'<small>لا توجد مشاكل تسليم.</small>'}</div>`;
+  }).join('');
+}
 
 function renderTeam(){
   const grid=$('#teamGrid'); if(!grid)return;
