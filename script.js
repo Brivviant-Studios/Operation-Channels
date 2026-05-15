@@ -84,7 +84,22 @@ function renderChat(){
   renderChatBadge();
 }
 function openChat(){ renderChat(); $('#chatDialog')?.showModal(); }
-async function sendChat(){ const me=currentUser(); const text=($('#chatInput')?.value||'').trim(); if(!me || !activeChatWith || !text) return; state.chats=Array.isArray(state.chats)?state.chats:[]; const msg={id:crypto.randomUUID?.()||String(Date.now()+Math.random()),from:me.name,to:activeChatWith,text,read:false,createdAt:new Date().toISOString(),createdAtText:new Date().toLocaleString('ar-EG')}; state.chats.push(msg); $('#chatInput').value=''; notifyUser(activeChatWith,'CHAT','رسالة شات جديدة',`${me.name}: ${text}`,''); await logAction('CHAT_MESSAGE',`رسالة شات من ${me.name} إلى ${activeChatWith}`,activeChatWith); await save(); renderChat(); }
+async function sendChat(){
+  const me=currentUser();
+  const input=$('#chatInput');
+  const text=(input?.value||'').trim();
+  if(!me) return alert('سجل الدخول أولاً.');
+  if(!activeChatWith) return alert('اختار حساب من القائمة الأول.');
+  if(!text) return;
+  state.chats=Array.isArray(state.chats)?state.chats:[];
+  const msg={id:crypto.randomUUID?.()||String(Date.now()+Math.random()),from:me.name,to:activeChatWith,text,read:false,createdAt:new Date().toISOString(),createdAtText:new Date().toLocaleString('ar-EG')};
+  state.chats.push(msg);
+  if(input) input.value='';
+  notifyUser(activeChatWith,'CHAT','رسالة شات جديدة',`${me.name}: ${text}`,'');
+  try{ await logAction('CHAT_MESSAGE',`رسالة شات من ${me.name} إلى ${activeChatWith}`,activeChatWith); }catch(err){ console.warn('chat log failed',err); }
+  try{ await save(); }catch(err){ console.warn('chat save failed',err); localSave(); }
+  renderChat();
+}
 function userCanHandover(t){ const me=currentUser(); return !!t && (isAdmin() || t.owner===me?.name); }
 function userCanRaiseIssue(t){ const me=currentUser(); return !!t && (isAdmin() || t.owner===me?.name); }
 
@@ -644,6 +659,7 @@ function bindEvents(){
   $('#saveProfile')?.addEventListener('click',saveProfileForm);
   $('#profileAvatarFile')?.addEventListener('change', async e=>{ const f=e.target.files?.[0]; if(f){ const data=await fileToBase64(f); $('#profileAvatarPreview').innerHTML=`<img src="${safeAttr(data)}" alt="Profile">`; } });
   document.addEventListener('click',async e=>{
+    if(e.target && e.target.closest('#sendChatBtn')){ e.preventDefault(); await sendChat(); return; }
     const el=e.target.closest('[data-action]'); if(!el)return;
     const a=el.dataset.action;
     if((a==='open-task-dialog'||a==='edit-task'||a==='archive-task'||a==='delete-calendar'||a==='rename-person'||a==='edit-account'||a==='remove-person') && !isAdmin()){
